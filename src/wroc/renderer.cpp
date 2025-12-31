@@ -48,39 +48,36 @@ void wroc_renderer_create(wroc_server* server, wroc_render_options render_option
 
 void wroc_render_frame(wroc_output* output)
 {
+    // log_error("wroc_render_frame: {} (queued: {})", (void*)output, output->frames_queued);
+
     auto* server = output->server;
     auto* renderer = server->renderer.get();
     auto* wren = renderer->wren.get();
     auto cmd = wren_begin_commands(wren);
 
-#if WROC_NOISY_FRAME_TIME
-    log_trace("Acquire 1 [{:.3f}]", std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(std::chrono::steady_clock::now().time_since_epoch()).count());
-#endif
-    auto current = wroc_output_acquire_image(output);
-    output->acquire_time = std::chrono::steady_clock::now();
-#if WROC_NOISY_FRAME_TIME
-    log_trace("Acquire 2 [{:.3f}]", std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(output->acquire_time.time_since_epoch()).count());
-#endif
-    auto current_extent = vec2f32(current.extent.width, current.extent.height);
+    auto current = wren_swapchain_get_current(output->swapchain.get());
+    auto current_extent = vec2f32(current->extent);
 
-    wren_transition(wren, cmd, current.image,
+    // log_error("RENDERING FRAME TO {}", (void*)current->image);
+
+    wren_transition(wren, cmd, current->image,
         VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
         0, VK_ACCESS_2_TRANSFER_WRITE_BIT,
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
-    wren->vk.CmdClearColorImage(cmd, current.image,
+    wren->vk.CmdClearColorImage(cmd, current->image,
         VK_IMAGE_LAYOUT_GENERAL,
         wrei_ptr_to(VkClearColorValue{.float32{0.f, 0.f, 0.f, 1.f}}),
         1, wrei_ptr_to(VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}));
 
     wren->vk.CmdBeginRendering(cmd, wrei_ptr_to(VkRenderingInfo {
         .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .renderArea = { {}, current.extent },
+        .renderArea = { {}, {current->extent.x, current->extent.y} },
         .layerCount = 1,
         .colorAttachmentCount = 1,
         .pColorAttachments = wrei_ptr_to(VkRenderingAttachmentInfo {
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = current.view,
+            .imageView = current->view,
             .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -95,7 +92,7 @@ void wroc_render_frame(wroc_output* output)
     wren->vk.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, wren->pipeline_layout, 0, 1, &wren->set, 0, nullptr);
 
     auto start_draws = [&] {
-        wren->vk.CmdSetScissor(cmd, 0, 1, wrei_ptr_to(VkRect2D { {}, current.extent }));
+        wren->vk.CmdSetScissor(cmd, 0, 1, wrei_ptr_to(VkRect2D { {}, {current->extent.x, current->extent.y} }));
         wren->vk.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipeline->pipeline);
     };
 
@@ -104,12 +101,16 @@ void wroc_render_frame(wroc_output* output)
 
     renderer->rects_cpu.clear();
 
+    std::vector<ref<wrei_object>> objects;
+
     auto draw = [&](wren_image* image, rect2f64 dest, rect2f64 source, vec4f32 color = {1, 1, 1, 1}) {
 
         // TODO: Async buffer waits
         // wren_image_wait(image);
 
         // log_warn("draw(dest = {}, source = {})", wrei_to_string(dest), wrei_to_string(source));
+
+        if (image) objects.emplace_back(image);
 
         auto pixel_dst = wroc_output_get_pixel_rect(output, dest);
 
@@ -124,8 +125,6 @@ void wroc_render_frame(wroc_output* output)
         });
     };
 
-    std::vector<ref<wren_buffer>> replaced_buffers;
-
     auto flush_draws = [&] {
         if (rect_id_start == rect_id) return;
 
@@ -135,7 +134,7 @@ void wroc_render_frame(wroc_output* output)
             if (renderer->rects.buffer && rect_id_start) {
                 // Previous draws using this buffer, keep alive until all draws complete
                 log_debug("  previous buffer still used in draws ({}), keeping...", rect_id_start);
-                replaced_buffers.emplace_back(renderer->rects.buffer);
+                objects.emplace_back(renderer->rects.buffer);
             }
             renderer->rects = {wren_buffer_create(wren, new_size * sizeof(wroc_shader_rect)), new_size};
         }
@@ -185,6 +184,7 @@ void wroc_render_frame(wroc_output* output)
                 dst.origin *= scale;
                 dst.extent *= scale;
                 dst.origin += pos;
+
                 draw(buffer->image.get(), dst, surface->buffer_src, vec4f32(opacity, opacity, opacity, opacity));
 
             } else if (auto* subsurface = wroc_surface_get_addon<wroc_subsurface>(s.get())) {
@@ -320,6 +320,7 @@ void wroc_render_frame(wroc_output* output)
 
     wren->vk.CmdEndRendering(cmd);
 
+#if 0
     // Screenshot
 
     if (renderer->screenshot_queued) {
@@ -328,7 +329,7 @@ void wroc_render_frame(wroc_output* output)
         // TODO: Factor this out to function and add options (rect, format, etc..)
         // TODO: Also just render everything twice instead of copying?
 
-        wren_submit_commands(wren, cmd);
+        wren_submit(wren, cmd);
 
         auto row_stride = current.extent.width * 4;
         auto byte_size = row_stride * current.extent.height;
@@ -372,30 +373,24 @@ void wroc_render_frame(wroc_output* output)
 
         cmd = wren_begin_commands(wren);
     }
+#endif
 
     // Submit
 
-    wren_transition(wren, cmd, current.image,
+    wren_transition(wren, cmd, current->image,
         VK_PIPELINE_STAGE_2_TRANSFER_BIT, 0,
         VK_ACCESS_2_TRANSFER_WRITE_BIT, 0,
         VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
-#if WROC_NOISY_FRAME_TIME
-    log_info("Submit    [{:.3f}]", std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(std::chrono::steady_clock::now().time_since_epoch()).count());
-#endif
+    objects.emplace_back(renderer->rects.buffer);
 
-    wren_submit_commands(wren, cmd);
+    // log_error("SUBMITTING");
 
-    // Present
+    std::vector<wrei_object*> object_ptrs;
+    for (auto& o : objects) object_ptrs.emplace_back(o.get());
+    wren_submit_and_present(wren, cmd, object_ptrs, output->swapchain.get());
 
-#if WROC_NOISY_FRAME_TIME
-    log_warn("Present 1 [{:.3f}]", std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(std::chrono::steady_clock::now().time_since_epoch()).count());
-#endif
-    wren_check(vkwsi_swapchain_present(&output->swapchain, 1, wren->queue, nullptr, 0, false));
-    output->present_time = std::chrono::steady_clock::now();
-#if WROC_NOISY_FRAME_TIME
-    log_warn("Present 2 [{:.3f}]", std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(output->present_time.time_since_epoch()).count());
-#endif
+    // log_error("SUBMITTED");
 
     // Send frame callbacks
 

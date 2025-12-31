@@ -17,6 +17,7 @@ wroc_wayland_output* wroc_wayland_backend_find_output_for_surface(wroc_wayland_b
 
 // -----------------------------------------------------------------------------
 
+#if 0
 static
 void wroc_listen_wl_callback_done(void*, struct wl_callback*, u32 time);
 
@@ -52,19 +53,20 @@ void wroc_listen_wl_callback_done(void* data, struct wl_callback*, u32 time)
 
     wroc_register_frame_callback(output);
 }
+#endif
 
 // -----------------------------------------------------------------------------
 
 static
 void wroc_listen_xdg_surface_configure(void* data, xdg_surface* surface, u32 serial)
 {
-    auto* output = static_cast<wroc_wayland_output*>(data);
-
     log_debug("xdg_surface::configure");
     log_debug("  serial = {}", serial);
 
     xdg_surface_ack_configure(surface, serial);
 
+#if 0
+    auto* output = static_cast<wroc_wayland_output*>(data);
     if (!output->frame_callback) {
         log_warn("  initial configure, registering frame callbacks");
         wroc_register_frame_callback(output);
@@ -73,6 +75,7 @@ void wroc_listen_xdg_surface_configure(void* data, xdg_surface* surface, u32 ser
             .output = output,
         });
     }
+#endif
 }
 
 const xdg_surface_listener wroc_xdg_surface_listener {
@@ -273,7 +276,7 @@ wroc_wayland_output::~wroc_wayland_output()
     if (xdg_surface) xdg_surface_destroy(xdg_surface);
     if (wl_surface)  wl_surface_destroy(wl_surface);
 
-    if (frame_callback) wl_callback_destroy(frame_callback);
+    // if (frame_callback) wl_callback_destroy(frame_callback);
 }
 
 void wroc_wayland_backend::destroy_output(wroc_output* output)

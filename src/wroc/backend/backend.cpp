@@ -7,6 +7,7 @@ void wroc_backend_init(wroc_server* server, wroc_backend_type type)
         break;case wroc_backend_type::wayland:
             wroc_wayland_backend_init(server);
         break;case wroc_backend_type::direct:
-            wroc_direct_backend_init(server);
+            // wroc_direct_backend_init(server);
+            assert(false);
     }
 }

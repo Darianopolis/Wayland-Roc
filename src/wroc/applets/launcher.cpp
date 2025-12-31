@@ -146,6 +146,7 @@ bool wroc_launcher_handle_event(wroc_launcher* launcher, const struct wroc_event
         auto& key_event = static_cast<const wroc_keyboard_event&>(event);
         if (key_event.key.upper() == XKB_KEY_D && key_event.key.pressed && wroc_get_active_modifiers(launcher->server) >= wroc_modifiers::mod) {
             log_warn("Showing launcher");
+            wroc_imgui_request_frame(launcher->server->imgui.get());
             launcher->show = true;
             launcher->grab_focus = true;
             launcher->filter = {};

@@ -166,6 +166,8 @@ target_sources(wren PUBLIC
     src/wren/wren_descriptors.cpp
     src/wren/wren_format.cpp
     src/wren/wren_pipelines.cpp
+    src/wren/wren_semaphore.cpp
+    src/wren/wren_swapchain.cpp
     )
 target_link_libraries(wren PUBLIC wrei shaders)
 
@@ -208,10 +210,10 @@ target_sources(wroc PUBLIC
     src/wroc/backend/wayland/seat.cpp
     src/wroc/backend/wayland/output.cpp
 
-    src/wroc/backend/direct/backend.cpp
-    src/wroc/backend/direct/output.cpp
-    src/wroc/backend/direct/input.cpp
-    src/wroc/backend/direct/events.cpp
+    # src/wroc/backend/direct/backend.cpp
+    # src/wroc/backend/direct/output.cpp
+    # src/wroc/backend/direct/input.cpp
+    # src/wroc/backend/direct/events.cpp
     )
 target_link_libraries(wroc PUBLIC wren wrei)
 

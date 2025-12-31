@@ -145,6 +145,7 @@ void wroc_run(int argc, char* argv[])
 
     wl_display_destroy_clients(server->display);
 
+    wren_flush(server->renderer->wren.get());
     server->renderer = nullptr;
 
     wl_display_destroy(server->display);

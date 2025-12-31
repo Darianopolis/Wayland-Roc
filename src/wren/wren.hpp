@@ -7,6 +7,11 @@
 
 // -----------------------------------------------------------------------------
 
+struct wren_semaphore;
+struct wren_swapchain;
+
+// -----------------------------------------------------------------------------
+
 struct wren_descriptor_id_allocator
 {
     std::vector<u32> freelist;
@@ -108,6 +113,18 @@ const wren_format_props* wren_get_format_props(wren_context*, wren_format);
 
 // -----------------------------------------------------------------------------
 
+struct wren_syncpoint
+{
+    u64 value;
+};
+
+struct wren_submission
+{
+    VkCommandBuffer cmd;
+    wren_syncpoint syncpoint;
+    std::vector<ref<wrei_object>> objects;
+};
+
 struct wren_context : wrei_object
 {
     struct {
@@ -144,7 +161,9 @@ struct wren_context : wrei_object
     VkQueue queue;
 
     VkCommandPool cmd_pool;
-    VkCommandBuffer cmd;
+    ref<wren_semaphore> timeline;
+    std::deque<wren_submission> submissions;
+    std::vector<ref<wren_semaphore>> pending_acquires;
 
     VkDescriptorSetLayout set_layout;
     VkPipelineLayout pipeline_layout;
@@ -172,12 +191,31 @@ WREI_DECORATE_FLAG_ENUM(wren_features)
 
 ref<wren_context> wren_create(wren_features);
 
-VkCommandBuffer wren_begin_commands( wren_context*);
-void            wren_submit_commands(wren_context*, VkCommandBuffer);
+// -----------------------------------------------------------------------------
+
+struct wren_semaphore : wrei_object
+{
+    wren_context* ctx;
+
+    VkSemaphore semaphore;
+    VkSemaphoreType type;
+    u64 value;
+
+    ~wren_semaphore();
+};
+
+ref<wren_semaphore> wren_semaphore_create(wren_context*, VkSemaphoreType, u64 initial_value = 0);
 
 // -----------------------------------------------------------------------------
 
-void wren_wait_for_timeline_value(wren_context*, const VkSemaphoreSubmitInfo&);
+VkCommandBuffer wren_begin_commands(    wren_context*);
+wren_syncpoint  wren_submit(            wren_context*, VkCommandBuffer, std::span<wrei_object* const> objects, wren_semaphore* signal = nullptr);
+wren_syncpoint  wren_submit_and_present(wren_context*, VkCommandBuffer, std::span<wrei_object* const> objects, wren_swapchain*);
+void wren_flush(wren_context*);
+
+// -----------------------------------------------------------------------------
+
+// void wren_wait_for_timeline_value(wren_context*, const VkSemaphoreSubmitInfo&);
 
 // -----------------------------------------------------------------------------
 
@@ -279,8 +317,8 @@ struct wren_image : wrei_object
 };
 
 ref<wren_image> wren_image_create(wren_context*, vec2u32 extent, wren_format format);
-void wren_image_update(wren_image*, const void* data);
-void wren_image_readback(wren_image*, void* data);
+wren_syncpoint wren_image_update(wren_image*, const void* data);
+// wren_syncpoint wren_image_readback(wren_image*, void* data);
 void wren_image_wait(wren_image*);
 
 void wren_transition(wren_context* vk, VkCommandBuffer cmd, VkImage image,
@@ -366,3 +404,50 @@ struct wren_image_handle
         , sampler(sampler->id)
     {}
 };
+
+// -----------------------------------------------------------------------------
+
+struct wren_swapchain_acquire_data
+{
+    void* userdata;
+    wren_swapchain* swapchain;
+    u32 index;
+};
+
+using wren_acquire_callback_fn = void(*)(const wren_swapchain_acquire_data&);
+
+struct wren_swapchain : wrei_object
+{
+    wren_context* ctx;
+
+    wren_format format;
+    VkColorSpaceKHR colorspace;
+    VkSwapchainKHR swapchain;
+    VkSurfaceKHR surface;
+    vec2u32 extent;
+
+    struct {
+        vec2u32 extent;
+    } pending;
+
+    std::atomic_bool can_acquire;
+
+    std::atomic<bool> destroy_requested;
+
+    ref<wren_semaphore>      acquire_semaphore;
+    std::jthread             acquire_thread;
+    wren_acquire_callback_fn acquire_callback;
+    void*                    acquire_callback_data;
+
+    static constexpr u32 invalid_index = ~0u;
+    u32 current_index = invalid_index;
+    std::vector<ref<wren_image>> images;
+    std::vector<ref<wren_semaphore>> present_semaphores;
+
+    ~wren_swapchain();
+};
+
+ref<wren_swapchain> wren_swapchain_create(wren_context*, VkSurfaceKHR, wren_format, wren_acquire_callback_fn, void* userdata);
+void wren_swapchain_confirm_acquire(const wren_swapchain_acquire_data&);
+void wren_swapchain_resize(wren_swapchain*, vec2u32 size);
+wren_image* wren_swapchain_get_current(wren_swapchain*);

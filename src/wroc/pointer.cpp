@@ -527,9 +527,16 @@ void wroc_pointer_motion(wroc_seat_pointer* pointer, vec2f64 rel, vec2f64 rel_un
 {
     // log_trace("pointer({:.3f}, {:.3f})", pos.x, pos.y);
 
+    auto* server = pointer->seat->server;
+
+    if (server->output_layout) {
+        for (auto& output : server->output_layout->outputs) {
+            wroc_output_queue_frames(output.get());
+        }
+    }
+
     auto surface_under_cursor = wroc_get_surface_under_cursor(pointer->seat->server);
 
-    auto* server = pointer->seat->server;
     auto* focused_surface = server->implicit_grab_surface ? server->implicit_grab_surface.get() : surface_under_cursor;
 
     if (focused_surface && focused_surface->resource) {

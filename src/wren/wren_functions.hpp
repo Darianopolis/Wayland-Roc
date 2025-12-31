@@ -94,6 +94,8 @@
     DO(GetImageMemoryRequirements2) \
     DO(BindImageMemory2) \
     DO(RegisterDisplayEventEXT) \
+    DO(GetSemaphoreCounterValue) \
+    DO(ReleaseSwapchainImagesKHR) \
 
 #define WREN_DECLARE_FUNCTION(funcName, ...) PFN_vk##funcName funcName;
 

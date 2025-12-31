@@ -14,7 +14,6 @@ void wroc_handle_event(wroc_server* server, const wroc_event& base_event)
     switch (wroc_event_get_type(base_event)) {
         case wroc_event_type::output_added:
         case wroc_event_type::output_removed:
-        case wroc_event_type::output_frame:
             wroc_handle_output_event(server, static_cast<const wroc_output_event&>(base_event));
             break;
 

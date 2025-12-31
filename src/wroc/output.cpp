@@ -25,7 +25,8 @@ void wroc_output_layout_init(wroc_server* server)
     // TODO: Configuration
     static constexpr auto name = "DP-1";
     static constexpr vec2i32 size = {3840, 2160};
-    static constexpr f64 refresh = 144;
+    // static constexpr f64 refresh = 144;
+    static constexpr f64 refresh = 0;
     static constexpr f64 dpi = 137.68;
 
     static constexpr f64 mm_per_inch = 25.4;
@@ -169,51 +170,86 @@ rect2i32 wroc_output_get_pixel_rect(wroc_output* output, rect2f64 rect, rect2f64
 }
 
 static
+void acquire_callback(const wren_swapchain_acquire_data& acquire)
+{
+    auto* output = static_cast<wroc_output*>(acquire.userdata);
+    output->acquire = acquire;
+
+    // log_error("ACQUIRE CALLBACK, signalling: {}", output->acquire_fd);
+
+    u64 inc = 1;
+    write(output->acquire_fd, &inc, sizeof(inc));
+}
+
+static
+void maybe_draw_frame(wroc_output* output)
+{
+    if (output->frames_queued && output->image_acquired) {
+        --output->frames_queued;
+        output->image_acquired = false;
+        wroc_render_frame(output);
+    }
+}
+
+static
+int acquire_handle_read(int fd, u32 mask, void* data)
+{
+    auto* output = static_cast<wroc_output*>(data);
+
+    // log_error("ACQUIRE HANDLE READ: {}", fd);
+
+    if (!(mask & WL_EVENT_READABLE)) return 0;
+
+    u64 value = 0;
+    while (read(fd, &value, sizeof(value)) > 0)
+        ;
+
+    wren_swapchain_confirm_acquire(output->acquire);
+
+    // log_error("POSTING OUTPUT FRAME EVENT");
+
+    output->image_acquired = true;
+    maybe_draw_frame(output);
+
+    return 0;
+}
+
+static
+int handle_frame_queued_read(int fd, u32 mask, void* data)
+{
+    auto* output = static_cast<wroc_output*>(data);
+
+    if (!(mask & WL_EVENT_READABLE)) return 0;
+
+    u64 value = 0;
+    while (read(fd, &value, sizeof(value)) > 0)
+        ;
+
+    maybe_draw_frame(output);
+
+    return 0;
+}
+
+void wroc_output_queue_frames(wroc_output* output, u32 count)
+{
+    output->frames_queued = std::max(output->frames_queued, count);
+    u64 inc = 1;
+    write(output->frame_queued_fd, &inc, sizeof(inc));
+}
+
+static
 void wroc_output_init_swapchain(wroc_output* output)
 {
     auto* renderer = output->server->renderer.get();
     auto* wren = renderer->wren.get();
 
-    log_debug("Creating vulkan swapchain");
-    wren_check(vkwsi_swapchain_create(&output->swapchain, renderer->wren->vkwsi, output->vk_surface));
+    output->swapchain = wren_swapchain_create(wren, output->vk_surface, renderer->output_format, acquire_callback, output);
 
-    wren_check(wren->vk.CreateSemaphore(wren->device, wrei_ptr_to(VkSemaphoreCreateInfo {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = wrei_ptr_to(VkSemaphoreTypeCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-            .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-            .initialValue = 0,
-        }),
-    }), nullptr, &output->timeline));
+    output->acquire_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    output->acquire_event_source = wl_event_loop_add_fd(output->server->event_loop, output->acquire_fd, WL_EVENT_READABLE, acquire_handle_read, output);
 
-    std::vector<VkSurfaceFormatKHR> surface_formats;
-    wren_vk_enumerate(surface_formats, wren->vk.GetPhysicalDeviceSurfaceFormatsKHR, wren->physical_device, output->vk_surface);
-    bool found = false;
-    for (auto& f : surface_formats) {
-        // TODO: We need to handle selection of format between outputs and render pipelines
-        // if (f.format == VK_FORMAT_R8G8B8A8_SRGB || f.format == VK_FORMAT_B8G8R8A8_SRGB) {
-        // if (f.format == VK_FORMAT_R8G8B8A8_UNORM || f.format == VK_FORMAT_B8G8R8A8_UNORM) {
-        if (f.format == renderer->output_format->vk) {
-            output->format = f;
-            found = true;
-            break;
-        }
-    }
-    if (!found) {
-        log_error("Could not find appropriate swapchain format");
-        return;
-    }
-
-    auto sw_info = vkwsi_swapchain_info_default();
-    sw_info.image_sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
-    sw_info.image_usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-        // TODO: DONT DO THIS - Use an intermediary buffer or multi-view rendering for screenshots
-        | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    sw_info.present_mode = VK_PRESENT_MODE_FIFO_KHR;
-    sw_info.min_image_count = 2;
-    sw_info.format = output->format.format;
-    sw_info.color_space = output->format.colorSpace;
-    vkwsi_swapchain_set_info(output->swapchain, &sw_info);
+    output->frame_queued_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    output->frame_queued_event_source = wl_event_loop_add_fd(output->server->event_loop, output->frame_queued_fd, WL_EVENT_READABLE, handle_frame_queued_read, output);
 }
 
 void wroc_output_enter_surface(wroc_wl_output* wl_output, wroc_surface* surface)
@@ -303,17 +339,27 @@ void wroc_output_added(wroc_output* output)
         wroc_output_init_swapchain(output);
     }
 
+    wren_swapchain_resize(output->swapchain.get(), output->size);
+
     log_debug("OUTPUT ADDED");
 
     wroc_output_layout_add_output(server->output_layout.get(), output);
+
+    wroc_output_queue_frames(output, 2);
 }
 
 wroc_output::~wroc_output()
 {
     auto* wren = server->renderer->wren.get();
 
-    wren->vk.DestroySemaphore(server->renderer->wren->device, timeline, nullptr);
-    if (swapchain) vkwsi_swapchain_destroy(swapchain);
+    log_error("OUTPUT BEING DESTROYED");
+
+    wren_flush(wren);
+    swapchain = nullptr;
+    log_error("SWAPCHAIN CLEARED");
+    close(acquire_fd);
+    if (acquire_event_source) wl_event_source_remove(acquire_event_source);
+    if (frame_queued_event_source) wl_event_source_remove(frame_queued_event_source);
     wren->vk.DestroySurfaceKHR(wren->instance, vk_surface, nullptr);
 }
 
@@ -328,30 +374,6 @@ void wroc_handle_output_event(wroc_server* server, const wroc_output_event& even
     switch (event.type) {
         case wroc_event_type::output_added:   wroc_output_added(    event.output); break;
         case wroc_event_type::output_removed: wroc_output_removed(  event.output); break;
-        case wroc_event_type::output_frame:   wroc_render_frame(    event.output); break;
         default: {}
     }
-}
-
-static
-VkSemaphoreSubmitInfo wroc_output_get_next_submit_info(wroc_output* output)
-{
-    return VkSemaphoreSubmitInfo {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        .semaphore = output->timeline,
-        .value = ++output->timeline_value,
-    };
-}
-
-vkwsi_swapchain_image wroc_output_acquire_image(wroc_output* output)
-{
-
-    auto* wren = output->server->renderer->wren.get();
-    vkwsi_swapchain_resize(output->swapchain, {u32(output->size.x), u32(output->size.y)});
-
-    auto timeline_info = wroc_output_get_next_submit_info(output);
-    wren_check(vkwsi_swapchain_acquire(&output->swapchain, 1, wren->queue, &timeline_info, 1));
-    wren_wait_for_timeline_value(wren, timeline_info);
-
-    return vkwsi_swapchain_get_current(output->swapchain);
 }

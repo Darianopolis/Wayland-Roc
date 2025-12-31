@@ -292,5 +292,7 @@ ref<wren_context> wren_create(wren_features features)
     log_info("render formats: {}", ctx->dmabuf_render_formats.size());
     log_info("dmabuf texture formats: {}", ctx->dmabuf_texture_formats.size());
 
+    ctx->timeline = wren_semaphore_create(ctx.get(), VK_SEMAPHORE_TYPE_TIMELINE);
+
     return ctx;
 }

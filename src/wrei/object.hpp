@@ -11,6 +11,7 @@ struct wrei_object_meta
     size_t              size;
     u32                 ref_count;
     wrei_object_version version;
+    bool noisy = false;
 };
 
 struct wrei_object
@@ -96,6 +97,10 @@ wrei_object* wrei_object_to_base(T* object)
 template<typename T>
 T* wrei_add_ref(T* t)
 {
+    if (t && wrei_object_to_base(t)->wrei.noisy) {
+        log_warn("ref++");
+        std::cout << std::stacktrace::current();
+    }
     if (t) wrei_object_to_base(t)->wrei.ref_count++;
     return t;
 }
@@ -104,6 +109,10 @@ template<typename T>
 void wrei_remove_ref(T* t)
 {
     if (!t) return;
+    if (wrei_object_to_base(t)->wrei.noisy) {
+        log_warn("ref--");
+        std::cout << std::stacktrace::current();
+    }
     auto b = wrei_object_to_base(t);
     if (!--b->wrei.ref_count) {
         wrei_destroy(b, b->wrei.version);

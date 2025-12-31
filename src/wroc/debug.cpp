@@ -46,6 +46,7 @@ bool wroc_debug_gui_handle_event(wroc_debug_gui* debug, const wroc_event& _event
 
         if (event.key.upper() == XKB_KEY_A && event.key.pressed && wroc_get_active_modifiers(debug->server) >= wroc_modifiers::mod) {
             debug->show_debug_menu = !debug->show_debug_menu;
+            wroc_imgui_request_frame(debug->server->imgui.get());
             return true;
         }
     }
@@ -144,18 +145,23 @@ void wroc_imgui_show_debug(wroc_debug_gui* debug)
     {
         auto& stats = debug->stats;
 
-        stats.frames++;
         auto now = std::chrono::steady_clock::now();
         if (now - stats.last_report > 0.5s) {
             auto dur = now - stats.last_report;
             auto seconds = std::chrono::duration_cast<std::chrono::duration<f64>>(dur).count();
 
-            stats.frametime = dur / stats.frames;
-            stats.fps = stats.frames / seconds;
+            if (stats.frames) {
+                stats.frametime = dur / stats.frames;
+                stats.fps = stats.frames / seconds;
+            } else {
+                stats.frametime = {};
+                stats.fps = 0;
+            }
 
             stats.last_report = now;
             stats.frames = 0;
         }
+        stats.frames++;
 
         ImGui_Text("Frametime:     {} ({:.2f} Hz)", wrei_duration_to_string(stats.frametime), stats.fps);
     }

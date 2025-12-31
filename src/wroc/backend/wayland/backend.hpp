@@ -18,7 +18,7 @@ struct wroc_wayland_output : wroc_output
     zwp_locked_pointer_v1* locked_pointer = {};
 #endif
 
-    wl_callback* frame_callback = {};
+    // wl_callback* frame_callback = {};
 
     ~wroc_wayland_output();
 };

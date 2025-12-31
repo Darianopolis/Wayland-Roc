@@ -255,20 +255,36 @@ bool wroc_imgui_handle_mods(wroc_imgui* imgui, const wroc_keyboard_event& event)
 
 bool wroc_imgui_handle_event(wroc_imgui* imgui, const wroc_event& event)
 {
+    bool maybe_request = false;
+    bool res = false;
     switch (wroc_event_get_type(event)) {
         break;case wroc_event_type::pointer_motion:
               case wroc_event_type::pointer_button:
               case wroc_event_type::pointer_axis:
-            return wroc_imgui_handle_pointer_event(imgui, static_cast<const wroc_pointer_event&>(event));
+            res = wroc_imgui_handle_pointer_event(imgui, static_cast<const wroc_pointer_event&>(event));
+            maybe_request = true;
         break;case wroc_event_type::keyboard_key:
-            return wroc_imgui_handle_key(imgui, static_cast<const wroc_keyboard_event&>(event));
+            res = wroc_imgui_handle_key(imgui, static_cast<const wroc_keyboard_event&>(event));
+            maybe_request = true;
         break;case wroc_event_type::keyboard_modifiers:
-            return wroc_imgui_handle_mods(imgui, static_cast<const wroc_keyboard_event&>(event));
+            res = wroc_imgui_handle_mods(imgui, static_cast<const wroc_keyboard_event&>(event));
+            maybe_request = true;
         break;default:
             ;
     }
 
-    return false;
+    if (maybe_request && (imgui->wants_keyboard || imgui->wants_mouse)) {
+        wroc_imgui_request_frame(imgui);
+    }
+
+    return res;
+}
+
+void wroc_imgui_request_frame(wroc_imgui* imgui)
+{
+    if (imgui && imgui->output) {
+        wroc_output_queue_frames(imgui->output.get(), 2);
+    }
 }
 
 void wroc_imgui_frame(wroc_imgui* imgui, vec2u32 extent, VkCommandBuffer cmd)

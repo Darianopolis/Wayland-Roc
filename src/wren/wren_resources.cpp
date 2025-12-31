@@ -7,6 +7,7 @@ const char* wren_result_to_string(VkResult res)
     return string_VkResult(res);
 }
 
+#if 0
 void wren_wait_for_timeline_value(wren_context* ctx, const VkSemaphoreSubmitInfo& info)
 {
     wren_check(ctx->vk.WaitSemaphores(ctx->device, wrei_ptr_to(VkSemaphoreWaitInfo {
@@ -16,6 +17,7 @@ void wren_wait_for_timeline_value(wren_context* ctx, const VkSemaphoreSubmitInfo
         .pValues = &info.value,
     }), UINT64_MAX));
 }
+#endif
 
 void wren_transition(wren_context* ctx, VkCommandBuffer cmd, VkImage image,
     VkPipelineStageFlags2 src, VkPipelineStageFlags2 dst,
@@ -163,10 +165,11 @@ void wren_image_init(wren_image* image)
         0, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
         0, VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-    wren_submit_commands(ctx, cmd);
+    wren_submit(ctx, cmd, {image});
 }
 
-void wren_image_readback(wren_image* image, void* data)
+#if 0
+wren_syncpoint wren_image_readback(wren_image* image, wren_buffer* buffer, u64 size)
 {
     auto* ctx = image->ctx.get();
     auto extent = image->extent;
@@ -194,8 +197,9 @@ void wren_image_readback(wren_image* image, void* data)
 
     std::memcpy(data, buffer->host_address, image_size);
 }
+#endif
 
-void wren_image_update(wren_image* image, const void* data)
+wren_syncpoint wren_image_update(wren_image* image, const void* data)
 {
     auto* ctx = image->ctx.get();
     auto extent = image->extent;
@@ -221,12 +225,14 @@ void wren_image_update(wren_image* image, const void* data)
         .imageExtent = { extent.x, extent.y, 1 },
     }));
 
-    wren_submit_commands(ctx, cmd);
+    return wren_submit(ctx, cmd, {image, buffer.get()});
 }
 
 wren_image::~wren_image()
 {
     // TODO: Proper non-owning image support
+
+    ctx->vk.DestroyImageView(ctx->device, view, nullptr);
     if (!id) {
         log_debug("Image isn't imported, don't free");
         return;
@@ -239,8 +245,6 @@ wren_image::~wren_image()
     log_debug("wren_image::destroyed");
 
     ctx->image_descriptor_allocator.free(id);
-
-    ctx->vk.DestroyImageView(ctx->device, view, nullptr);
 
     if (vma_allocation) {
         vmaDestroyImage(ctx->vma, image, vma_allocation);

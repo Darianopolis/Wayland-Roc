@@ -98,13 +98,16 @@ struct wroc_output : wrei_object
     wroc_server* server;
 
     VkSurfaceKHR vk_surface;
-    VkSemaphore timeline;
-    u64 timeline_value = 0;
     VkSurfaceFormatKHR format;
-    vkwsi_swapchain* swapchain;
+    ref<wren_swapchain> swapchain;
+    wren_swapchain_acquire_data acquire;
+    int acquire_fd = -1;
+    wl_event_source* acquire_event_source;
 
-    std::chrono::steady_clock::time_point acquire_time;
-    std::chrono::steady_clock::time_point present_time;
+    u32 frames_queued = 0;
+    bool image_acquired = false;
+    int frame_queued_fd = -1;
+    wl_event_source* frame_queued_event_source;
 
     vec2i32 size;
     rect2f64 layout_rect;
@@ -113,8 +116,6 @@ struct wroc_output : wrei_object
 
     ~wroc_output();
 };
-
-vkwsi_swapchain_image wroc_output_acquire_image(wroc_output*);
 
 vec2i32 wroc_output_get_pixel(wroc_output*, vec2f64 global_pos, vec2f64* remainder = nullptr);
 rect2i32 wroc_output_get_pixel_rect(wroc_output*, rect2f64 global_rect, rect2f64* remainder = nullptr);
@@ -132,6 +133,8 @@ void wroc_output_layout_init(wroc_server*);
 void wroc_output_layout_add_output(wroc_output_layout*, wroc_output*);
 void wroc_output_layout_remove_output(wroc_output_layout*, wroc_output*);
 vec2f64 wroc_output_layout_clamp_position(wroc_output_layout*, vec2f64 global_pos, wroc_output** output = nullptr);
+
+void wroc_output_queue_frames(wroc_output* output, u32 count = 1);
 
 // -----------------------------------------------------------------------------
 
@@ -898,12 +901,12 @@ struct wroc_renderer : wrei_object
     ref<wren_sampler> sampler;
 
     bool show_debug_cursor = false;
-
     bool screenshot_queued = false;
 };
 
 void wroc_renderer_create(wroc_server*, wroc_render_options);
 void wroc_renderer_init_buffer_feedback(wroc_renderer*);
+void wroc_try_render_frame(wroc_output*);
 void wroc_render_frame(wroc_output*);
 
 // -----------------------------------------------------------------------------
@@ -951,6 +954,7 @@ void ImGui_Text(std::format_string<Args...> fmt, Args&&... args)
 void wroc_imgui_init(wroc_server*);
 void wroc_imgui_frame(wroc_imgui*, vec2u32 extent, VkCommandBuffer);
 bool wroc_imgui_handle_event(wroc_imgui*, const struct wroc_event&);
+void wroc_imgui_request_frame(wroc_imgui*);
 
 // -----------------------------------------------------------------------------
 

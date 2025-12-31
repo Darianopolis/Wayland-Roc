@@ -263,6 +263,10 @@ void wroc_surface_commit(wroc_surface* surface, wroc_surface_commit_flags flags)
 
         wroc_surface_commit(s.get(), wroc_surface_commit_flags::from_parent);
     }
+
+    for (auto& output : surface->server->output_layout->outputs) {
+        wroc_output_queue_frames(output.get());
+    }
 }
 
 static
