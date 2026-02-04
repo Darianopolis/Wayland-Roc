@@ -1,77 +1,20 @@
 #include "internal.hpp"
 
-VkSemaphoreSubmitInfo wren_syncpoint_to_submit_info(const wren_syncpoint& syncpoint)
-{
-    return {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        .semaphore = syncpoint.semaphore->semaphore,
-        .value     = syncpoint.value,
-        .stageMask = syncpoint.stages,
-    };
-}
-
-static
-ref<wren_semaphore> create_semaphore_base(wren_context* ctx, u64 initial_value)
+ref<wren_semaphore> wren_semaphore_create(wren_context* ctx)
 {
     auto semaphore = wrei_create<wren_semaphore>();
     semaphore->ctx = ctx;
 
-    wren_check(ctx->vk.CreateSemaphore(ctx->device, wrei_ptr_to(VkSemaphoreCreateInfo {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = wrei_ptr_to(VkSemaphoreTypeCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-            .pNext = wrei_ptr_to(VkExportSemaphoreCreateInfo {
-                .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
-                .handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT,
-            }),
-            .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-            .initialValue = initial_value,
-        })
-    }), nullptr, &semaphore->semaphore));
-
-    return semaphore;
-}
-
-ref<wren_semaphore> wren_semaphore_create(wren_context* ctx, u64 initial_value)
-{
-    // Here we are creating a timeline sempahore, and exporting a persistent syncobj
-    // handle to it that we can use for importing/exporting syncobj files for interop.
-    // This trick only works when the driver uses syncobjs as the opaque fd type.
-    // This seems to work fine on AMD, but definitely won't work for all vendors.
-
-    // As a portable solution, we'll have to use DRM syncobjs as the underlying type, creating
-    // binary semaphores as required for vulkan waits
-
-    auto semaphore = create_semaphore_base(ctx, initial_value);
-
-    int syncobj_fd = -1;
-    wren_check(ctx->vk.GetSemaphoreFdKHR(ctx->device, wrei_ptr_to(VkSemaphoreGetFdInfoKHR {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
-        .semaphore = semaphore->semaphore,
-        .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT,
-    }), &syncobj_fd));
-
-    unix_check(drmSyncobjFDToHandle(ctx->drm_fd, syncobj_fd, &semaphore->syncobj));
-
-    close(syncobj_fd);
+    unix_check(drmSyncobjCreate(ctx->drm_fd, 0, &semaphore->syncobj));
 
     return semaphore;
 }
 
 ref<wren_semaphore> wren_semaphore_import_syncobj(wren_context* ctx, int syncobj_fd)
 {
-    auto semaphore = create_semaphore_base(ctx, 0);
+    auto semaphore = wrei_create<wren_semaphore>();
 
     unix_check(drmSyncobjFDToHandle(ctx->drm_fd, syncobj_fd, &semaphore->syncobj));
-
-    if (wren_check(ctx->vk.ImportSemaphoreFdKHR(ctx->device, wrei_ptr_to(VkImportSemaphoreFdInfoKHR {
-        .sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR,
-        .semaphore = semaphore->semaphore,
-        .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT,
-        .fd = syncobj_fd,
-    }))) != VK_SUCCESS) {
-        close(syncobj_fd);
-    };
 
     return semaphore;
 }
@@ -121,7 +64,6 @@ int wren_semaphore_export_syncfile(wren_semaphore* semaphore, u64 source_point)
 
 wren_semaphore::~wren_semaphore()
 {
-    ctx->vk.DestroySemaphore(ctx->device, semaphore, nullptr);
     unix_check(drmSyncobjDestroy(ctx->drm_fd, syncobj));
 }
 
@@ -129,7 +71,7 @@ u64 wren_semaphore_get_value(wren_semaphore* semaphore)
 {
     auto* ctx = semaphore->ctx;
 
-    u64 value;
+    u64 value = 0;
     unix_check(drmSyncobjQuery2(ctx->drm_fd, &semaphore->syncobj, &value, 1, 0));
 
     return value;
@@ -213,13 +155,17 @@ ref<wren_binary_semaphore> wren_binary_semaphore_create(wren_context* ctx)
     } else {
         wren_check(ctx->vk.CreateSemaphore(ctx->device, wrei_ptr_to(VkSemaphoreCreateInfo {
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            .pNext = wrei_ptr_to(VkExportSemaphoreCreateInfo {
+                .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+                .handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT,
+            }),
         }), nullptr, &binary->semaphore));
     }
 
     return binary;
 }
 
-ref<wren_binary_semaphore> wren_semaphore_transfer_to_binary(wren_semaphore* semaphore, u64 source_point)
+ref<wren_binary_semaphore> wren_semaphore_export_binary(wren_semaphore* semaphore, u64 source_point)
 {
     auto sync_fd = wren_semaphore_export_syncfile(semaphore, source_point);
 
@@ -236,6 +182,22 @@ ref<wren_binary_semaphore> wren_semaphore_transfer_to_binary(wren_semaphore* sem
     })));
 
     return binary;
+}
+
+void wren_semaphore_import_binary(wren_semaphore* semaphore, wren_binary_semaphore* binary, u64 target_point)
+{
+    auto* ctx = semaphore->ctx;
+
+    int syncobj_fd = -1;
+    wren_check(ctx->vk.GetSemaphoreFdKHR(ctx->device, wrei_ptr_to(VkSemaphoreGetFdInfoKHR {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
+        .semaphore = binary->semaphore,
+        .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT,
+    }), &syncobj_fd));
+
+    wren_semaphore_import_syncfile(semaphore, syncobj_fd, target_point);
+
+    close(syncobj_fd);
 }
 
 wren_binary_semaphore::~wren_binary_semaphore()

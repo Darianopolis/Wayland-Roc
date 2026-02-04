@@ -47,3 +47,23 @@ An experiment in writing a simple opinionated independent Wayland compositor.
 $ python build.py -BI                           build + install
 # setcap cap_sys_nice+ep ~/.local/bin/wroc      give NICE capability for global queue priority
 ```
+
+#### Build Options
+
+- `-B` : Build project
+- `-I` : Install project
+- `-R` : Build in release mode
+- `-C` : Force reconfigure and clean build
+- `-U` : Check and update dependencies (updates `build.json`)
+- `--asan` : Enable address sanitizer
+- `--system-slangc` : Look for `slangc` on path
+
+#### Leak Sanitizer suppression
+
+When building and running with the `--asan` option, certain libraries / drivers may leak memory unavoidably.
+To suppress:
+
+1) identify the shared objects leaking memory
+2) Create a file `lsan.supp`
+3) Add `leak:SOURCE` entries for each such shared object. E.g. `leak:libdbus-1.so`
+4) Set the `LSAN_OPTIONS=suppressions=/path/to/lsan.supp` environmental variable when running

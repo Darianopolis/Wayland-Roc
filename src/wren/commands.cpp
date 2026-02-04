@@ -32,6 +32,7 @@ wren_queue::~wren_queue()
 wren_commands::~wren_commands()
 {
     auto* ctx = queue->ctx;
+    ctx->vk.DestroyFence(ctx->device, fence, nullptr);
     ctx->vk.FreeCommandBuffers(ctx->device, queue->cmd_pool, 1, &buffer);
 }
 
@@ -100,8 +101,28 @@ wren_syncpoint wren_commands_submit(wren_commands* commands, std::span<const wre
 
     std::vector<VkSemaphoreSubmitInfo> wait_infos(waits.size());
     for (auto[i, wait] : waits | std::views::enumerate) {
-        wait_infos[i] = wren_syncpoint_to_submit_info(wait);
-        wren_commands_protect_object(commands, wait.semaphore);
+        auto binary = wren_semaphore_export_binary(wait.semaphore, wait.value);
+        wait_infos[i] = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .semaphore = binary->semaphore,
+            .stageMask = wait.stages,
+        };
+        wren_commands_protect_object(commands, binary.get());
+    }
+
+    auto target_binary = wren_binary_semaphore_create(ctx);
+    VkSemaphoreSubmitInfo signal_info = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = target_binary->semaphore,
+        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+    };
+
+    if (ctx->features.contains(wren_feature::validation)) {
+        // When validation layers are enabled, they need visibility of command completion
+        // otherwise they will complain about resources still being used.
+        wren_check(ctx->vk.CreateFence(ctx->device, wrei_ptr_to(VkFenceCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        }), nullptr, &commands->fence));
     }
 
     wren_check(ctx->vk.QueueSubmit2(queue->queue, 1, wrei_ptr_to(VkSubmitInfo2 {
@@ -114,10 +135,17 @@ wren_syncpoint wren_commands_submit(wren_commands* commands, std::span<const wre
             .commandBuffer = commands->buffer,
         }),
         .signalSemaphoreInfoCount = 1,
-        .pSignalSemaphoreInfos = wrei_ptr_to(wren_syncpoint_to_submit_info(target_syncpoint)),
-    }), nullptr));
+        .pSignalSemaphoreInfos = &signal_info,
+    }), commands->fence));
 
-    wren_semaphore_wait_value(queue->queue_sema.get(), queue->submitted, [commands = ref(commands)](u64) {});
+    wren_semaphore_import_binary(queue->queue_sema.get(), target_binary.get(), commands->submitted_value);
+
+    wren_semaphore_wait_value(queue->queue_sema.get(), queue->submitted, [commands = ref(commands)](u64) {
+        if (commands->fence) {
+            auto* ctx = commands->queue->ctx;
+            wren_check(ctx->vk.WaitForFences(ctx->device, 1, &commands->fence, VK_TRUE, UINT64_MAX));
+        }
+    });
 
     return target_syncpoint;
 }

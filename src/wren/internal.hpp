@@ -65,4 +65,15 @@ ref<wren_queue> wren_queue_init(wren_context*, wren_queue_type, u32 family);
 
 // -----------------------------------------------------------------------------
 
-VkSemaphoreSubmitInfo wren_syncpoint_to_submit_info(const wren_syncpoint& syncpoint);
+struct wren_binary_semaphore : wrei_object
+{
+    wren_context* ctx;
+
+    VkSemaphore semaphore;
+
+    ~wren_binary_semaphore();
+};
+
+ref<wren_binary_semaphore> wren_binary_semaphore_create(wren_context*);
+ref<wren_binary_semaphore> wren_semaphore_export_binary(wren_semaphore*, u64 source_point);
+void                       wren_semaphore_import_binary(wren_semaphore*, wren_binary_semaphore*, u64 target_point);

@@ -227,6 +227,20 @@ ref<wren_context> wren_create(flags<wren_feature> _features, wrei_event_loop* ev
         return nullptr;
     }
 
+    // Detect tooling
+
+    {
+        std::vector<VkPhysicalDeviceToolProperties> tools;
+        wren_vk_enumerate(tools, ctx->vk.GetPhysicalDeviceToolProperties, ctx->physical_device);
+
+        for (auto& tool : tools) {
+            if (tool.layer == "VK_LAYER_KHRONOS_validation"sv) {
+                log_warn("Detected validation layers, enabling validation support");
+                ctx->features |= wren_feature::validation;
+            }
+        }
+    }
+
     // Device creation
 
     static constexpr u32 invalid_index = ~0u;

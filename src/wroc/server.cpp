@@ -64,7 +64,9 @@ void wroc_run(int argc, char* argv[])
 {
     wrei_log_set_history_enabled(true);
 
-    wroc_render_option render_options = {};
+    flags<wren_feature> wren_features = {};
+
+    flags<wroc_render_option> render_options = {};
     wroc_backend_type backend_type = getenv("WAYLAND_DISPLAY")
         ? wroc_backend_type::layered
         : wroc_backend_type::direct;
@@ -156,10 +158,15 @@ void wroc_run(int argc, char* argv[])
     server->backend->init();
     log_info("Backend initialized");
 
+    // Wren
+
+    log_info("Initializing wren");
+    server->wren = wren_create(wren_features, event_loop.get(), server->backend->get_preferred_drm_device());
+
     // Renderer
 
     log_info("Initializing renderer");
-    wroc_renderer_create(render_options);
+    server->renderer = wroc_renderer_create(render_options);
 
     // Cursor
 
@@ -230,7 +237,7 @@ void wroc_run(int argc, char* argv[])
 
     // Keep Wren alive until all other resources have been destroyed safely
     log_info("Flushing wren submissions");
-    ref wren = server->renderer->wren;
+    ref wren = server->wren;
     wren_wait_idle(wren.get());
 
     log_info("Destroying: backend");

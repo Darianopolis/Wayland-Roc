@@ -14,6 +14,7 @@
     DO(GetPhysicalDeviceMemoryProperties) \
     DO(GetPhysicalDeviceFormatProperties2) \
     DO(GetPhysicalDeviceImageFormatProperties2) \
+    DO(GetPhysicalDeviceToolProperties) \
 
 #define WREN_DEVICE_FUNCTIONS(DO) \
     DO(GetDeviceQueue) \
