@@ -12,6 +12,7 @@ struct wrui_context
     wrio_context* wrio;
 
     struct {
+        ref<wren_pipeline> compute;
         ref<wren_pipeline> premult;
         ref<wren_pipeline> postmult;
         ref<wren_image>    white;

@@ -17,7 +17,7 @@ ref<wren_pipeline> wren_pipeline_create_compute(wren_context* ctx,
                     .pCode = spirv.data(),
                 }),
                 .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-                .pName = "main",
+                .pName = entry,
         },
         .layout = ctx->pipeline_layout,
     }), nullptr, &pipeline->pipeline));

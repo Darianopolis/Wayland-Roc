@@ -7,7 +7,9 @@
 
 void wrui_render_init(wrui_context* ctx)
 {
-    ctx->render.usage = wren_image_usage::render;
+    ctx->render.usage = wren_image_usage::render | wren_image_usage::storage;
+
+    ctx->render.compute = wren_pipeline_create_compute(ctx->wren, wrui_render_shader, "compute");
 
     ctx->render.postmult = wren_pipeline_create_graphics(
         ctx->wren, wren_blend_mode::postmultiplied,
@@ -27,8 +29,11 @@ void wrui_render_init(wrui_context* ctx)
     ctx->render.sampler = wren_sampler_create(ctx->wren, VK_FILTER_NEAREST, VK_FILTER_LINEAR);
 }
 
-void wrui_render(wrui_context* ctx, wrio_output* output, wren_image* target)
+static
+void raster(wrui_context* ctx, wren_image* target, wren_commands* commands)
 {
+    auto  cmd = commands->buffer;
+    auto* wren = ctx->wren;
     auto& render = ctx->render;
 
     struct wrui_draw
@@ -111,8 +116,6 @@ void wrui_render(wrui_context* ctx, wrio_output* output, wren_image* target)
 
     walk_node(ctx->scene.get());
 
-    auto wren = ctx->wren;
-
     auto make_gpu = [&]<typename T>(std::span<T> data) {
         wren_array<T> arr{wren_buffer_create(wren, data.size_bytes(), {}), 0};
         std::memcpy(arr.host(), data.data(), data.size_bytes());
@@ -121,18 +124,14 @@ void wrui_render(wrui_context* ctx, wrio_output* output, wren_image* target)
 
     auto gpu_vertices = make_gpu(std::span(vertices));
     auto gpu_indices  = make_gpu(std::span(indices));
-
-    auto queue = wren_get_queue(wren, wren_queue_type::graphics);
-    auto commands = wren_commands_begin(queue);
-    auto cmd = commands->buffer;
-    wren_commands_protect_object(commands.get(), gpu_vertices.buffer.get());
-    wren_commands_protect_object(commands.get(), gpu_indices.buffer.get());
+    wren_commands_protect_object(commands, gpu_vertices.buffer.get());
+    wren_commands_protect_object(commands, gpu_indices.buffer.get());
 
     // Protect images
 
-    wren_commands_protect_object(commands.get(), render.white.get());
+    wren_commands_protect_object(commands, render.white.get());
     for (auto& draw : draws) {
-        wren_commands_protect_object(commands.get(), draw.image);
+        wren_commands_protect_object(commands, draw.image);
     }
 
     // Record
@@ -190,6 +189,207 @@ void wrui_render(wrui_context* ctx, wrio_output* output, wren_image* target)
     }
 
     wren->vk.CmdEndRendering(cmd);
+}
+
+static
+void compute(wrui_context* ctx, wren_image* target, wren_commands* commands)
+{
+    auto  cmd = commands->buffer;
+    auto* wren = ctx->wren;
+    auto& render = ctx->render;
+
+    u32 tile_size = wrui_tile_size;
+
+    std::vector<wrui_tile> tiles;
+    std::vector<std::vector<u32>> bins;
+    vec2u32 tile_counts = (target->extent + tile_size - 1u) / tile_size;
+    for (u32 y = 0; y < target->extent.y; y += tile_size) {
+        for (u32 x = 0; x < target->extent.x; x += tile_size) {
+            tiles.emplace_back(wrui_tile {
+                .offset = {x, y},
+            });
+        }
+    }
+    bins.resize(tiles.size());
+    auto get_tile_idx = [&](vec2u32 tid) -> u32 {
+        wrei_assert(tid.x < tile_counts.x && tid.y < tile_counts.y);
+        return tid.y * tile_counts.x + tid.x;
+    };
+
+    std::vector<wrui_vertex>   vertices;
+    std::vector<wrui_triangle> triangles;
+
+    auto push_mesh = [&](wrui_transform_state tform, wren_image* image, wren_sampler* sampler,
+        std::span<const wrui_vertex> in_vertices, std::span<const u16> in_indices)
+    {
+        u32 vtx = vertices.size();
+        for (auto& vert : in_vertices) {
+            vertices.emplace_back(wrui_vertex {
+                .pos   = tform.translation + vert.pos * tform.scale,
+                .uv    = vert.uv,
+                .color = vert.color,
+            });
+        }
+
+        // log_warn("  offset = {}", vtx);
+
+        for (u32 i = 0; i < in_indices.size(); i += 3) {
+            // log_warn("  tri[{}]", i / 3);
+            auto tri = triangles.size();
+            auto[v0, v1, v2] = std::make_tuple(in_indices[i] + vtx, in_indices[i + 1] + vtx, in_indices[i + 2] + vtx);
+            // log_warn("    indices = [{}, {}, {}]", v0, v1, v2);
+            triangles.emplace_back(wrui_triangle {
+                .image = {
+                    image ?: render.white.get(),
+                    sampler ?: render.sampler.get()
+                },
+                .vertices { v0, v1, v2 },
+            });
+
+            auto min = glm::min(glm::min(vertices[v0].pos, vertices[v1].pos), vertices[v2].pos);
+            auto max = glm::max(glm::max(vertices[v0].pos, vertices[v1].pos), vertices[v2].pos);
+
+            // log_warn("    min = {}", wrei_to_string(min));
+            // log_warn("    max = {}", wrei_to_string(max));
+
+            auto min_tile = glm::max(vec2i32(glm::floor(min / f32(tile_size))), vec2i32(0, 0));
+            auto max_tile = glm::min(vec2i32(glm::ceil( max / f32(tile_size))), vec2i32(tile_counts));
+
+            // log_warn("    min_tile = {}", wrei_to_string(min_tile));
+            // log_warn("    max_tile = {}", wrei_to_string(max_tile));
+
+            for (i32 y = min_tile.y; y < max_tile.y; ++y) {
+                for (i32 x = min_tile.x; x < max_tile.x; ++x) {
+                    auto idx = get_tile_idx({x, y});
+                    auto& bin = bins[idx];
+                    bin.emplace_back(tri);
+                    // log_warn("    bin[{}, {}].count = {}", x, y, bin.size());
+                }
+            }
+        }
+    };
+
+    auto walk_node = [&](this auto&& walk_node, wrui_node* node) -> void
+    {
+        switch (node->type) {
+            break;case wrui_node_type::transform:
+                wrei_assert_fail("", "Unexpected transform node in layer stack");
+            break;case wrui_node_type::tree: {
+                for (auto& child : static_cast<wrui_tree*>(node)->children) {
+                    walk_node(child.get());
+                }
+            }
+            break;case wrui_node_type::mesh: {
+                auto* mesh = static_cast<wrui_mesh*>(node);
+                auto& tform = mesh->transform->global;
+
+                push_mesh(tform, mesh->image.get(), mesh->sampler.get(), mesh->vertices, mesh->indices);
+            }
+            break;case wrui_node_type::texture: {
+                auto* texture = static_cast<wrui_texture*>(node);
+                aabb2f32 src = texture->src;
+                aabb2f32 dst = texture->dst;
+
+                //  0 ---- 1
+                //  | a /  |  a = 0,2,1
+                //  |  / b |  b = 1,2,3
+                //  2 ---- 3
+
+                auto vtx = [&](vec2f32 pos, vec2f32 uv = {}) {
+                    return wrui_vertex { .pos = pos, .uv = uv, .color = texture->tint };
+                };
+                push_mesh(texture->transform->global, texture->image.get(), texture->sampler.get(),
+                    {
+                        vtx({dst.min.x, dst.min.y}, {src.min.x, src.min.y}),
+                        vtx({dst.max.x, dst.min.y}, {src.max.x, src.min.y}),
+                        vtx({dst.min.x, dst.max.y}, {src.min.x, src.max.y}),
+                        vtx({dst.max.x, dst.max.y}, {src.max.x, src.max.y}),
+                    }, {0, 2, 1, 1, 2, 3});
+            }
+        }
+    };
+
+    walk_node(ctx->scene.get());
+
+    log_trace("tiles: {}", tiles.size());
+
+    auto make_gpu = [&]<typename T>(std::span<T> data) {
+        if (data.empty()) return wren_array<T> {};
+        wren_array<T> arr{wren_buffer_create(wren, data.size_bytes(), {}), 0};
+        std::memcpy(arr.host(), data.data(), data.size_bytes());
+        wren_commands_protect_object(commands, arr.buffer.get());
+        return arr;
+    };
+
+    u32 max = 0;
+
+    std::vector<u32> elements;
+    for (u32 i = 0; i < tiles.size(); ++i) {
+        auto& tile = tiles[i];
+        auto& bin = bins[i];
+
+        max = std::max(max, u32(bin.size()));
+
+        auto start = elements.size();
+        elements.append_range(bin);
+
+        tile.start = start;
+        tile.count = bin.size();
+    }
+
+    log_error("BIN MAX = {}", max);
+    log_error("ImGui texture: {}", u32(ctx->imgui.font_image->id));
+
+    auto gpu_vertices = make_gpu(std::span<wrui_vertex>(vertices));
+    auto gpu_tiles = make_gpu(std::span<wrui_tile>(tiles));
+    auto gpu_triangles = make_gpu(std::span<wrui_triangle>(triangles));
+    auto gpu_elements = make_gpu(std::span<u32>(elements));
+
+    wren->vk.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, render.compute->pipeline);
+    wren->vk.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, wren->pipeline_layout, 0, 1, &wren->set, 0, nullptr);
+
+    wrei_assert(target->usage.contains(wren_image_usage::storage));
+
+    wren->vk.CmdPushConstants(cmd, wren->pipeline_layout, VK_SHADER_STAGE_ALL, 0, sizeof(wrui_render_input),
+        wrei_ptr_to(wrui_render_input {
+            .vertices = gpu_vertices.device(),
+            .texture = {target, nullptr},
+            .tiles = gpu_tiles.device(),
+            .triangles = gpu_triangles.device(),
+            .elements = gpu_elements.device(),
+            .extent = target->extent,
+        }));
+
+    wren->vk.CmdDispatch(cmd, 1, 1, tiles.size());
+}
+
+void wrui_render(wrui_context* ctx, wrio_output* output, wren_image* target)
+{
+    auto queue = wren_get_queue(ctx->wren, wren_queue_type::graphics);
+    auto commands = wren_commands_begin(queue);
+
+    (void)raster;
+    (void)compute;
+
+    auto start = std::chrono::steady_clock::now();
+
+    // raster(ctx, target, commands.get());
+    compute(ctx, target, commands.get());
+
+    auto end = std::chrono::steady_clock::now();
+    log_debug("Recorded in: {}", wrei_duration_to_string(end - start));
+
+    struct timer_guard : wrei_object
+    {
+        std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+        ~timer_guard()
+        {
+            auto end = std::chrono::steady_clock::now();
+            log_debug("Executed in: {}", wrei_duration_to_string(end - start));
+        }
+    };
+    auto timer = wrei_create<timer_guard>();
+    wren_commands_protect_object(commands.get(), timer.get());
 
     auto done = wren_commands_submit(commands.get(), {});
     wrio_output_present(output, target, done);

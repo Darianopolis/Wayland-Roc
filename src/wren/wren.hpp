@@ -402,12 +402,12 @@ struct wren_array
 
     T* device() const
     {
-        return buffer->device<T>(byte_offset);
+        return buffer ? buffer->device<T>(byte_offset) : nullptr;
     }
 
     T* host() const
     {
-        return buffer->host<T>(byte_offset);
+        return buffer ? buffer->host<T>(byte_offset) : nullptr;
     }
 
     wren_array_element_proxy<T> operator[](usz index) const
