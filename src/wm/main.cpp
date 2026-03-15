@@ -245,7 +245,7 @@ int main()
 
     // Wayland
 
-    auto way = way_create(event_loop.get(), gpu.get(), scene.get());
+    auto way = way::create(event_loop.get(), gpu.get(), scene.get());
 
     // ImGui
 
@@ -292,9 +292,9 @@ int main()
                 scene::iterate(scene::get_layer(scene.get(), scene::Layer::window)->parent,
                     scene::IterateDirection::back_to_front,
                     [&](scene::Tree* tree) {
-                        way_surface* surface;
+                        way::Surface* surface;
                         if (tree->system == way->scene_system
-                                && (surface = way_get_userdata<way_surface>(tree))) {
+                                && (surface = way::get_userdata<way::Surface>(tree))) {
                             log_warn("{}tree({}{}) {{", indent(),
                                 core::to_string(surface->role),
                                 tree->enabled ? "": ", disabled");
@@ -325,10 +325,10 @@ int main()
     auto main_mod = scene::Modifier::alt;
     auto hotkey_client = scene::client::create(scene.get());
     core::Map<scene::Hotkey, std::string> hotkeys;
-    hotkeys[{ main_mod,                         KEY_SPACE  }] = "launcher";
-    hotkeys[{ main_mod,                         KEY_Q      }] = "close-focused";
-    hotkeys[{ main_mod,                         KEY_S      }] = "clear-focus";
-    hotkeys[{ main_mod,                         BTN_MIDDLE }] = "close-under-cursor";
+    hotkeys[{ main_mod, KEY_SPACE  }] = "launcher";
+    hotkeys[{ main_mod, KEY_Q      }] = "close-focused";
+    hotkeys[{ main_mod, KEY_S      }] = "clear-focus";
+    hotkeys[{ main_mod, BTN_MIDDLE }] = "close-under-cursor";
     for (auto[hotkey, _] : hotkeys) {
         core_assert(scene::client::hotkey_register(hotkey_client.get(), hotkey));
     }

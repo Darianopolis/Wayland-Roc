@@ -28,7 +28,7 @@ namespace core
 
         ~ThreadStackStorage()
         {
-            munmap(start, size);
+            core::check<munmap>(start, size);
         }
 
         usz remaining_bytes() const

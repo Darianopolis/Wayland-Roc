@@ -40,7 +40,7 @@ void update_mapping(wroc_shm_pool* pool, usz size)
 
 wroc_shm_mapping::~wroc_shm_mapping()
 {
-    munmap(data, size);
+    core::check<munmap>(data, size);
 }
 
 static

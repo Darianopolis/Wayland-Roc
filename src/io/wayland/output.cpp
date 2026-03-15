@@ -16,7 +16,7 @@ void format_table(void* udata, zwp_linux_dmabuf_feedback_v1* zwp_linux_dmabuf_fe
 
     auto mapped = static_cast<entry*>(core::check<mmap>(nullptr, size, PROT_READ, MAP_SHARED, fd, 0).value);
     core_assert(mapped);
-    defer { munmap(mapped, size); };
+    defer { core::check<munmap>(mapped, size); };
 
     auto count = size / sizeof(entry);
     auto formats = std::span(mapped, count);

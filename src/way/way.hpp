@@ -2,6 +2,9 @@
 
 #include "scene/scene.hpp"
 
-struct way_server;
+namespace way
+{
+    struct Server;
 
-auto way_create(core::EventLoop*, gpu::Context*, scene::Context*) -> core::Ref<way_server>;
+    auto create(core::EventLoop*, gpu::Context*, scene::Context*) -> core::Ref<way::Server>;
+}

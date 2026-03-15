@@ -3,10 +3,10 @@
 static
 void create_data_source(wl_client* client, wl_resource* resource, u32 id)
 {
-    auto* server = way_get_userdata<way_server>(resource);
+    auto* server = way::get_userdata<way::Server>(resource);
 
-    auto source = core::create<way_data_source>();
-    source->client = way_client_from(server, client);
+    auto source = core::create<way::DataSource>();
+    source->client = way::client::from(server, client);
     source->resource = way_resource_create_refcounted(wl_data_source, client, resource, id, source.get());
     source->source = scene::data_source::create(source->client->scene.get(), {
         .cancel = [source = source.get()] {
@@ -21,8 +21,8 @@ void create_data_source(wl_client* client, wl_resource* resource, u32 id)
 static
 void get_data_device(wl_client* wl_client, wl_resource* resource, u32 id, wl_resource* seat)
 {
-    auto* server = way_get_userdata<way_server>(resource);
-    auto* client = way_client_from(server, wl_client);
+    auto* server = way::get_userdata<way::Server>(resource);
+    auto* client = way::client::from(server, wl_client);
 
     client->data_devices.emplace_back(way_resource_create_refcounted(wl_data_device, wl_client, resource, id, client));
 }
@@ -44,14 +44,14 @@ void receive(wl_client* client, wl_resource* resource, const char* mime_type, in
 {
     auto write = core::fd::adopt(fd);
 
-    auto* offer = way_get_userdata<way_data_offer>(resource);
+    auto* offer = way::get_userdata<way::DataOffer>(resource);
     scene::data_source::send(offer->source.get(), mime_type, write.get());
 }
 
 WAY_INTERFACE(wl_data_offer) = {
     WAY_STUB(accept),
     .receive = receive,
-    .destroy = way_simple_destroy,
+    .destroy = way::simple_destroy,
     WAY_STUB(finish),
     WAY_STUB(set_actions),
 };
@@ -61,13 +61,13 @@ WAY_INTERFACE(wl_data_offer) = {
 static
 void offer(wl_client* client, wl_resource* resource, const char* mime_type)
 {
-    auto* source = way_get_userdata<way_data_source>(resource);
+    auto* source = way::get_userdata<way::DataSource>(resource);
     scene::data_source::offer(source->source.get(), mime_type);
 }
 
 WAY_INTERFACE(wl_data_source) = {
     .offer = offer,
-    .destroy = way_simple_destroy,
+    .destroy = way::simple_destroy,
     WAY_STUB(set_actions),
 };
 
@@ -82,7 +82,7 @@ void start_drag(
     wl_resource* icon_surface,
     u32 serial)
 {
-    auto* client = way_get_userdata<way_client>(data_device);
+    auto* client = way::get_userdata<way::Client>(data_device);
     log_error("TODO - wl_data_device{{{}}}::start_drag", (void*)data_device);
     if (data_source) {
         log_error("     - cancelling drag for wl_data_source{{{}}}", (void*)data_source);
@@ -93,24 +93,24 @@ void start_drag(
 static
 void set_selection(wl_client* wl_client, wl_resource* resource, wl_resource* wl_data_source, u32 serial)
 {
-    auto* source = way_get_userdata<way_data_source>(wl_data_source);
+    auto* source = way::get_userdata<way::DataSource>(wl_data_source);
     scene::set_selection(source->client->server->scene, source->source.get());
 }
 
 WAY_INTERFACE(wl_data_device) = {
     .start_drag = start_drag,
     .set_selection = set_selection,
-    .release = way_simple_destroy,
+    .release = way::simple_destroy,
 };
 
 // -----------------------------------------------------------------------------
 
 static
-auto make_offer(way_client* client, wl_resource* wl_data_device, scene::DataSource* source) -> core::Ref<way_data_offer>
+auto make_offer(way::Client* client, wl_resource* wl_data_device, scene::DataSource* source) -> core::Ref<way::DataOffer>
 {
     auto* server = client->server;
 
-    auto offer = core::create<way_data_offer>();
+    auto offer = core::create<way::DataOffer>();
     offer->client = client;
     offer->source = source;
 
@@ -125,7 +125,7 @@ auto make_offer(way_client* client, wl_resource* wl_data_device, scene::DataSour
     return offer;
 }
 
-void way_data_offer_selection(way_client* client)
+void way::data_offer::selection(way::Client* client)
 {
     auto* server = client->server;
     auto* source = scene::get_selection(server->scene);

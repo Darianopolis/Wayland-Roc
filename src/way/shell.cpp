@@ -3,13 +3,13 @@
 static
 void get_xdg_surface(wl_client* client, wl_resource* resource, u32 id, wl_resource* wl_surface)
 {
-    auto* surface = way_get_userdata<way_surface>(wl_surface);
+    auto* surface = way::get_userdata<way::Surface>(wl_surface);
     surface->xdg_surface = way_resource_create_refcounted(xdg_surface, client, resource, id, surface);
 }
 
 WAY_INTERFACE(xdg_wm_base) = {
-    .destroy = way_simple_destroy,
-    .create_positioner = way_create_positioner,
+    .destroy = way::simple_destroy,
+    .create_positioner = way::positioner::create,
     .get_xdg_surface = get_xdg_surface,
     WAY_STUB(pong),
 };
@@ -24,8 +24,8 @@ WAY_BIND_GLOBAL(xdg_wm_base, bind)
 static
 void get_toplevel(wl_client* client, wl_resource* resource, u32 id)
 {
-    auto* surface = way_get_userdata<way_surface>(resource);
-    surface->role = way_surface_role::xdg_toplevel;
+    auto* surface = way::get_userdata<way::Surface>(resource);
+    surface->role = way::SurfaceRole::xdg_toplevel;
     surface->toplevel.resource = way_resource_create_refcounted(xdg_toplevel, client, resource, id, surface);
 
     surface->toplevel.window = scene::window::create(surface->client->scene.get());
@@ -36,11 +36,11 @@ void get_toplevel(wl_client* client, wl_resource* resource, u32 id)
 static
 void ack_configure(wl_client* client, wl_resource* resource, u32 serial)
 {
-    auto* surface = way_get_userdata<way_surface>(resource);
+    auto* surface = way::get_userdata<way::Surface>(resource);
     auto* server = surface->client->server;
 
     if (serial > surface->sent_serial) {
-        way_post_error(server, surface->xdg_surface, XDG_SURFACE_ERROR_INVALID_SERIAL,
+        way::post_error(server, surface->xdg_surface, XDG_SURFACE_ERROR_INVALID_SERIAL,
             "Client acked configure {} which is higher than latest sent configure serial {}",
             serial, surface->sent_serial);
         return;
@@ -52,39 +52,39 @@ void ack_configure(wl_client* client, wl_resource* resource, u32 serial)
     }
 
     surface->pending->xdg.acked_serial = serial;
-    surface->pending->set(way_surface_committed_state::acked_serial);
+    surface->pending->set(way::SurfaceCommittedState::acked_serial);
 
     surface->acked_serial = serial;
 }
 
 WAY_INTERFACE(xdg_surface) = {
-    .destroy = way_role_destroy,
+    .destroy = way::role_destroy,
     .get_toplevel = get_toplevel,
-    .get_popup = way_get_popup,
+    .get_popup = way::get_popup,
     .set_window_geometry = WAY_ADDON_SIMPLE_STATE_REQUEST(way_xdg_surface, xdg.geometry, geometry, rect2i32({x, y}, {w, h}, core::xywh), i32 x, i32 y, i32 w, i32 h),
     .ack_configure = ack_configure,
 };
 
-void way_xdg_surface_apply(way_surface* surface, way_surface_state& from)
+void way::xdg_surface::apply(way::Surface* surface, way::SurfaceState& from)
 {
     WAY_ADDON_SIMPLE_STATE_APPLY(from, surface->current, xdg.geometry,     geometry);
     WAY_ADDON_SIMPLE_STATE_APPLY(from, surface->current, xdg.acked_serial, acked_serial);
 
-    if (!surface->current.is_set(way_surface_committed_state::geometry) && surface->mapped) {
+    if (!surface->current.is_set(way::SurfaceCommittedState::geometry) && surface->mapped) {
         surface->current.xdg.geometry = { {}, surface->current.buffer->extent, core::xywh };
     }
 }
 
-void way_xdg_surface_configure(way_surface* surface)
+void way::xdg_surface::configure(way::Surface* surface)
 {
     auto* server = surface->client->server;
-    surface->sent_serial = way_next_serial(server);
+    surface->sent_serial = way::next_serial(server);
     way_send(server, xdg_surface_send_configure, surface->xdg_surface, surface->sent_serial);
 }
 
 // -----------------------------------------------------------------------------
 
-void way_toplevel_on_map_change(way_surface* surface, bool mapped)
+void way::toplevel::on_map_change(way::Surface* surface, bool mapped)
 {
     if (mapped) {
         scene::window::map(surface->toplevel.window.get());
@@ -94,17 +94,17 @@ void way_toplevel_on_map_change(way_surface* surface, bool mapped)
 }
 
 static
-void configure_toplevel(way_surface* surface, vec2u32 extent)
+void configure_toplevel(way::Surface* surface, vec2u32 extent)
 {
     way_send(surface->client->server, xdg_toplevel_send_configure, surface->toplevel.resource,
         extent.x, extent.y,
-        core::ptr_to(way_to_wl_array<const xdg_toplevel_state>({
+        core::ptr_to(way::to_wl_array<const xdg_toplevel_state>({
             XDG_TOPLEVEL_STATE_ACTIVATED,
         }))
     );
 }
 
-void way_toplevel_on_reposition(way_surface* surface, rect2f32 frame, vec2f32 gravity)
+void way::toplevel::on_reposition(way::Surface* surface, rect2f32 frame, vec2f32 gravity)
 {
     if (surface->toplevel.anchor.extent == frame.extent) {
         // Move
@@ -119,7 +119,7 @@ void way_toplevel_on_reposition(way_surface* surface, rect2f32 frame, vec2f32 gr
             surface->toplevel.queued = true;
         } else {
             configure_toplevel(surface, frame.extent);
-            way_xdg_surface_configure(surface);
+            way::xdg_surface::configure(surface);
             surface->toplevel.pending = true;
         }
     }
@@ -128,21 +128,21 @@ void way_toplevel_on_reposition(way_surface* surface, rect2f32 frame, vec2f32 gr
 }
 
 static
-void send_premap_configure(way_surface* surface)
+void send_premap_configure(way::Surface* surface)
 {
     auto* server = surface->client->server;
 
     if (wl_resource_get_version(surface->toplevel.resource) >= XDG_TOPLEVEL_WM_CAPABILITIES_SINCE_VERSION) {
-        way_send(server, xdg_toplevel_send_wm_capabilities, surface->toplevel.resource, core::ptr_to(way_to_wl_array<const xdg_toplevel_wm_capabilities>({
+        way_send(server, xdg_toplevel_send_wm_capabilities, surface->toplevel.resource, core::ptr_to(way::to_wl_array<const xdg_toplevel_wm_capabilities>({
             XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN,
         })));
     }
 
     configure_toplevel(surface, {0, 0});
-    way_xdg_surface_configure(surface);
+    way::xdg_surface::configure(surface);
 }
 
-void way_toplevel_apply(way_surface* surface, way_surface_state& from)
+void way::toplevel::apply(way::Surface* surface, way::SurfaceState& from)
 {
     WAY_ADDON_SIMPLE_STATE_APPLY(from, surface->current, toplevel.title, title);
     WAY_ADDON_SIMPLE_STATE_APPLY(from, surface->current, toplevel.app_id, app_id);
@@ -165,7 +165,7 @@ void way_toplevel_apply(way_surface* surface, way_surface_state& from)
         surface->toplevel.pending = false;
         if (surface->toplevel.queued) {
             configure_toplevel(surface, anchor.extent);
-            way_xdg_surface_configure(surface);
+            way::xdg_surface::configure(surface);
             surface->toplevel.queued = false;
             surface->toplevel.pending = true;
         }
@@ -178,7 +178,7 @@ void way_toplevel_apply(way_surface* surface, way_surface_state& from)
 // -----------------------------------------------------------------------------
 
 WAY_INTERFACE(xdg_toplevel) = {
-    .destroy = way_role_destroy,
+    .destroy = way::role_destroy,
     WAY_STUB(set_parent),
     .set_title  = WAY_ADDON_SIMPLE_STATE_REQUEST(way_toplevel, toplevel.title,  title,  title,  const char* title),
     .set_app_id = WAY_ADDON_SIMPLE_STATE_REQUEST(way_toplevel, toplevel.app_id, app_id, app_id, const char* app_id),

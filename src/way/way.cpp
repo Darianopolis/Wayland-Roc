@@ -1,15 +1,15 @@
 #include "internal.hpp"
 
-way_server::~way_server()
+way::Server::~Server()
 {
     wl_event_loop_fd = nullptr;
     wl_display_terminate(wl_display);
     wl_display_destroy(wl_display);
 }
 
-auto way_create(core::EventLoop* event_loop, gpu::Context* gpu, scene::Context* scene) -> core::Ref<way_server>
+auto way::create(core::EventLoop* event_loop, gpu::Context* gpu, scene::Context* scene) -> core::Ref<way::Server>
 {
-    auto server = core::create<way_server>();
+    auto server = core::create<way::Server>();
 
     server->epoch = std::chrono::steady_clock::now();
 
@@ -18,7 +18,7 @@ auto way_create(core::EventLoop* event_loop, gpu::Context* gpu, scene::Context* 
     server->scene = scene;
     server->scene_system = scene::register_system(scene);
 
-    way_seat_init(server.get());
+    way::seat::init(server.get());
 
     server->wl_display = wl_display_create();
 
@@ -42,8 +42,8 @@ auto way_create(core::EventLoop* event_loop, gpu::Context* gpu, scene::Context* 
     way_global(server.get(), wp_viewporter);
     way_global(server.get(), zwp_pointer_gestures_v1);
     way_global(server.get(), wp_cursor_shape_manager_v1);
-    way_output_init(server.get());
-    way_dmabuf_init(server.get());
+    way::output::init(server.get());
+    way::dmabuf::init(server.get());
 
     server->sampler = gpu::sampler::create(gpu, {
         .mag = VK_FILTER_NEAREST,
@@ -51,24 +51,24 @@ auto way_create(core::EventLoop* event_loop, gpu::Context* gpu, scene::Context* 
     });
 
     server->client.created.data = server.get();
-    server->client.created.listener.notify = way_on_client_create;
+    server->client.created.listener.notify = way::on_client_create;
     wl_display_add_client_created_listener(server->wl_display, &server->client.created.listener);
 
     return server;
 }
 
-auto way_get_elapsed(way_server* server) -> std::chrono::steady_clock::duration
+auto way::get_elapsed(way::Server* server) -> std::chrono::steady_clock::duration
 {
     return std::chrono::steady_clock::now() - server->epoch;
 }
 
-wl_global* way_global_(way_server* server, const wl_interface* interface, i32 version, wl_global_bind_func_t bind, void* data)
+wl_global* way::global(way::Server* server, const wl_interface* interface, i32 version, wl_global_bind_func_t bind, void* data)
 {
     core_assert(version <= interface->version);
     return wl_global_create(server->wl_display, interface, version, data ?: server, bind);
 }
 
-wl_resource* way_resource_create_(wl_client* client, const wl_interface* interface, int version, int id, const void* impl, void* data, bool refcount)
+wl_resource* way::resource_create(wl_client* client, const wl_interface* interface, int version, int id, const void* impl, void* data, bool refcount)
 {
     auto resource = wl_resource_create(client, interface, version, id);
     if (refcount) {
@@ -82,18 +82,18 @@ wl_resource* way_resource_create_(wl_client* client, const wl_interface* interfa
     return resource;
 }
 
-u32 way_next_serial(way_server* server)
+u32 way::next_serial(way::Server* server)
 {
     return wl_display_next_serial(server->wl_display);
 }
 
-void way_queue_client_flush(way_server* server)
+void way::queue_client_flush(way::Server* server)
 {
     // TODO: Queue to run at end of event
     wl_display_flush_clients(server->wl_display);
 }
 
-void way_simple_destroy(wl_client* client, wl_resource* resource)
+void way::simple_destroy(wl_client* client, wl_resource* resource)
 {
     wl_resource_destroy(resource);
 }

@@ -112,7 +112,7 @@ void wroc_seat_init_keyboard(wroc_seat* seat)
     }
 
     memcpy(dst, keymap_str, keymap_size);
-    munmap(dst, keymap_size);
+    core::check<munmap>(dst, keymap_size);
     free(keymap_str);
 
     kb->keymap_fd = ro_fd;

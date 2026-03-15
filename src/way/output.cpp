@@ -1,12 +1,12 @@
 #include "internal.hpp"
 
-void way_output_init(way_server* server)
+void way::output::init(way::Server* server)
 {
     way_global(server, wl_output);
 }
 
 WAY_INTERFACE(wl_output) = {
-    .release = way_simple_destroy,
+    .release = way::simple_destroy,
 };
 
 WAY_BIND_GLOBAL(wl_output, bind)

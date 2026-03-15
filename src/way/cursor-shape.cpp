@@ -4,11 +4,11 @@ static
 void get_pointer(wl_client* client, wl_resource* cursor_shape_manager, u32 id, wl_resource* wl_pointer)
 {
     way_resource_create_unsafe(wp_cursor_shape_device_v1, client, cursor_shape_manager, id,
-        way_get_userdata<way_server>(cursor_shape_manager));
+        way::get_userdata<way::Server>(cursor_shape_manager));
 }
 
 WAY_INTERFACE(wp_cursor_shape_manager_v1) = {
-    .destroy = way_simple_destroy,
+    .destroy = way::simple_destroy,
     .get_pointer = get_pointer,
     WAY_STUB(get_tablet_tool_v2),
 };
@@ -68,13 +68,13 @@ auto cursor_shape_to_xcursor(wp_cursor_shape_device_v1_shape shape) -> const cha
 static
 void set_shape(wl_client* client, wl_resource* resource, u32 serial, u32 shape)
 {
-    auto* server = way_get_userdata<way_server>(resource);
+    auto* server = way::get_userdata<way::Server>(resource);
     if (server->pointer.scene) {
         scene::pointer::set_xcursor(server->pointer.scene, cursor_shape_to_xcursor(wp_cursor_shape_device_v1_shape(shape)));
     }
 }
 
 WAY_INTERFACE(wp_cursor_shape_device_v1) = {
-    .destroy = way_simple_destroy,
+    .destroy = way::simple_destroy,
     .set_shape = set_shape,
 };

@@ -1,7 +1,7 @@
 #include "internal.hpp"
 
 static
-void pool_unmap(way_shm_pool* pool)
+void pool_unmap(way::ShmPool* pool)
 {
     if (pool->data) {
         core::check<munmap>(pool->data, pool->size);
@@ -11,7 +11,7 @@ void pool_unmap(way_shm_pool* pool)
 }
 
 static
-void pool_map(way_shm_pool* pool, usz size)
+void pool_map(way::ShmPool* pool, usz size)
 {
     pool_unmap(pool);
 
@@ -20,15 +20,15 @@ void pool_map(way_shm_pool* pool, usz size)
         pool->data = res.value;
         pool->size = size;
     } else {
-        way_post_error(pool->server, pool->resource, WL_SHM_ERROR_INVALID_FD, "mmap failed: {}", strerror(res.error));
+        way::post_error(pool->server, pool->resource, WL_SHM_ERROR_INVALID_FD, "mmap failed: {}", strerror(res.error));
     }
 }
 
 static
 void create_pool(wl_client* client, wl_resource* resource, u32 id, int fd, i32 size)
 {
-    auto pool = core::create<way_shm_pool>();
-    pool->server = way_get_userdata<way_server>(resource);
+    auto pool = core::create<way::ShmPool>();
+    pool->server = way::get_userdata<way::Server>(resource);
     pool->fd = core::fd::adopt(fd);
     pool->resource = way_resource_create_refcounted(wl_shm_pool, client, resource, id, pool.get());
     pool_map(pool.get(), size);
@@ -36,7 +36,7 @@ void create_pool(wl_client* client, wl_resource* resource, u32 id, int fd, i32 s
 
 WAY_INTERFACE(wl_shm) = {
     .create_pool = create_pool,
-    .release = way_simple_destroy,
+    .release = way::simple_destroy,
 };
 
 WAY_BIND_GLOBAL(wl_shm, bind)
@@ -71,26 +71,29 @@ gpu::DrmFormat to_drm(wl_shm_format shm)
 
 // -----------------------------------------------------------------------------
 
-struct way_shm_buffer : way_buffer
+namespace way
 {
-    core::Ref<way_shm_pool> pool;
+    struct ShmBuffer : way::Buffer
+    {
+        core::Ref<way::ShmPool> pool;
 
-    way_resource resource;
+        way::Resource resource;
 
-    i32 offset;
-    i32 stride;
-    gpu::Format format;
+        i32 offset;
+        i32 stride;
+        gpu::Format format;
 
-    virtual auto acquire(way_surface*, way_surface_state& from) -> core::Ref<gpu::Image> final override;
-};
+        virtual auto acquire(way::Surface*, way::SurfaceState& from) -> core::Ref<gpu::Image> final override;
+    };
+}
 
 static
 void create_buffer(wl_client* client, wl_resource* resource, u32 id, i32 offset, i32 width, i32 height, i32 stride, u32 _format)
 {
-    auto* pool = way_get_userdata<way_shm_pool>(resource);
+    auto* pool = way::get_userdata<way::ShmPool>(resource);
     auto* server = pool->server;
 
-    auto buffer = core::create<way_shm_buffer>();
+    auto buffer = core::create<way::ShmBuffer>();
     buffer->resource = way_resource_create_refcounted(wl_buffer, client, resource, id, buffer.get());
 
     buffer->format = gpu::format::from_drm(to_drm(wl_shm_format(_format)));
@@ -100,7 +103,7 @@ void create_buffer(wl_client* client, wl_resource* resource, u32 id, i32 offset,
     buffer->offset = offset;
 
     if (!buffer->format) {
-        way_post_error(server, resource, WL_SHM_ERROR_INVALID_FORMAT, "Format {} is not supported", core::to_string(wl_shm_format(_format)));
+        way::post_error(server, resource, WL_SHM_ERROR_INVALID_FORMAT, "Format {} is not supported", core::to_string(wl_shm_format(_format)));
         return;
     }
 }
@@ -108,17 +111,17 @@ void create_buffer(wl_client* client, wl_resource* resource, u32 id, i32 offset,
 static
 void pool_resize(wl_client* client, wl_resource* resource, i32 size)
 {
-    auto* pool = way_get_userdata<way_shm_pool>(resource);
+    auto* pool = way::get_userdata<way::ShmPool>(resource);
     pool_map(pool, size);
 }
 
 WAY_INTERFACE(wl_shm_pool) = {
     .create_buffer = create_buffer,
-    .destroy = way_simple_destroy,
+    .destroy = way::simple_destroy,
     .resize = pool_resize,
 };
 
-way_shm_pool::~way_shm_pool()
+way::ShmPool::~ShmPool()
 {
     pool_unmap(this);
 }
@@ -128,10 +131,10 @@ way_shm_pool::~way_shm_pool()
 #define NOISY_SHM_BUFFER_IMAGES 1
 
 static
-auto try_steal(way_shm_buffer* buffer, way_surface* surface) -> gpu::Image*
+auto try_steal(way::ShmBuffer* buffer, way::Surface* surface) -> gpu::Image*
 {
     // If the last attached buffer is a wl_shm buffer...
-    auto* shm_buffer = dynamic_cast<way_shm_buffer*>(surface->current.buffer.get());
+    auto* shm_buffer = dynamic_cast<way::ShmBuffer*>(surface->current.buffer.get());
     if (!shm_buffer) return nullptr;
 
     // ...try to steal the previously acquired image...
@@ -149,7 +152,7 @@ auto try_steal(way_shm_buffer* buffer, way_surface* surface) -> gpu::Image*
     return candidate;
 }
 
-auto way_shm_buffer::acquire(way_surface* surface, way_surface_state& packet) -> core::Ref<gpu::Image>
+auto way::ShmBuffer::acquire(way::Surface* surface, way::SurfaceState& packet) -> core::Ref<gpu::Image>
 {
     core::Ref image = try_steal(this, surface);
 

@@ -7,266 +7,281 @@
 
 // -----------------------------------------------------------------------------
 
-template<typename T>
-std::span<T> way_to_span(wl_array* array)
+namespace way
 {
-    usz count = array->size / sizeof(T);
-    return std::span<T>(static_cast<T*>(array->data), count);
-}
+    template<typename T>
+    std::span<T> to_span(wl_array* array)
+    {
+        usz count = array->size / sizeof(T);
+        return std::span<T>(static_cast<T*>(array->data), count);
+    }
 
-template<typename T>
-wl_array way_to_wl_array(std::span<T> span)
-{
-    return wl_array {
-        .size = span.size_bytes(),
-        .alloc = span.size_bytes(),
-        .data = const_cast<void*>(static_cast<const void*>(span.data())),
-    };
-}
-
-// -----------------------------------------------------------------------------
-
-template<typename T>
-T* way_get_userdata(void* data)
-{
-    return static_cast<T*>(data);
-}
-
-template<typename T>
-T* way_get_userdata(wl_resource* resource)
-{
-    return resource ? way_get_userdata<T>(wl_resource_get_user_data(resource)) : nullptr;
+    template<typename T>
+    wl_array to_wl_array(std::span<T> span)
+    {
+        return wl_array {
+            .size = span.size_bytes(),
+            .alloc = span.size_bytes(),
+            .data = const_cast<void*>(static_cast<const void*>(span.data())),
+        };
+    }
 }
 
 // -----------------------------------------------------------------------------
 
-class way_resource
+namespace way
 {
-    wl_resource* resource = {};
-    wl_listener destroy_listener {
-        .notify = on_destroy,
-    };
-
-public:
-    way_resource()
+    template<typename T>
+    T* get_userdata(void* data)
     {
-        wl_list_init(&destroy_listener.link);
+        return static_cast<T*>(data);
     }
 
-    way_resource(wl_resource* resource)
-        : resource(resource)
+    template<typename T>
+    T* get_userdata(wl_resource* resource)
     {
-        wl_resource_add_destroy_listener(resource, &destroy_listener);
+        return resource ? way::get_userdata<T>(wl_resource_get_user_data(resource)) : nullptr;
     }
-
-    void reset(wl_resource* new_resource)
-    {
-        if (resource == new_resource) return;
-
-        resource = new_resource;
-        wl_list_remove(&destroy_listener.link);
-        wl_list_init(&destroy_listener.link);
-
-        if (resource) {
-            wl_resource_add_destroy_listener(new_resource, &destroy_listener);
-        }
-    }
-
-    way_resource& operator=(wl_resource* other)
-    {
-        reset(other);
-        return *this;
-    }
-
-    static void on_destroy(wl_listener* listener, void* data)
-    {
-        way_resource* self = wl_container_of(listener, self, destroy_listener);
-        self->resource = nullptr;
-        wl_list_init(&self->destroy_listener.link);
-
-        // log_debug("core_resource<{}>: resource destroyed, clearing..", (void*)self);
-    }
-
-    ~way_resource()
-    {
-        wl_list_remove(&destroy_listener.link);
-    }
-
-    CORE_DELETE_COPY_MOVE(way_resource)
-
-    operator wl_resource*() const { return resource; }
-};
+}
 
 // -----------------------------------------------------------------------------
 
-class way_resource_list
+namespace way
 {
-    struct list_node
+    class Resource
     {
-        wl_resource* resource = nullptr;
+        wl_resource* resource = {};
         wl_listener destroy_listener {
             .notify = on_destroy,
         };
-        list_node* prev = nullptr;
-        list_node* next = nullptr;
 
-        list_node()
+    public:
+        Resource()
         {
             wl_list_init(&destroy_listener.link);
         }
 
-        list_node(wl_resource* resource)
+        Resource(wl_resource* resource)
             : resource(resource)
         {
             wl_resource_add_destroy_listener(resource, &destroy_listener);
         }
 
-        static void on_destroy(wl_listener* listener, void* data)
+        void reset(wl_resource* new_resource)
         {
-            list_node* self = wl_container_of(listener, self, destroy_listener);
+            if (resource == new_resource) return;
 
-            // log_debug("cleaning up list_node: {}", (void*)self);
-            wl_list_init(&self->destroy_listener.link);
-
-            if (self->prev) self->prev->next = self->next;
-            if (self->next) self->next->prev = self->prev;
-
-            delete self;
-        }
-
-        ~list_node()
-        {
-            // log_debug("List node destroyed: {}", (void*)this);
-
+            resource = new_resource;
             wl_list_remove(&destroy_listener.link);
+            wl_list_init(&destroy_listener.link);
+
+            if (resource) {
+                wl_resource_add_destroy_listener(new_resource, &destroy_listener);
+            }
         }
 
-        CORE_DELETE_COPY_MOVE(list_node)
-    };
-
-    list_node root;
-
-    struct iterator
-    {
-        const list_node* current;
-
-        iterator& operator++()
+        way::Resource& operator=(wl_resource* other)
         {
-            current = current->next;
+            reset(other);
             return *this;
         }
 
-        bool operator==(const iterator& other) const
+        static void on_destroy(wl_listener* listener, void* data)
         {
-            return current == other.current;
+            way::Resource* self = wl_container_of(listener, self, destroy_listener);
+            self->resource = nullptr;
+            wl_list_init(&self->destroy_listener.link);
+
+            // log_debug("core_resource<{}>: resource destroyed, clearing..", (void*)self);
         }
 
-        wl_resource* operator*() const
+        ~Resource()
         {
-            return current->resource;
+            wl_list_remove(&destroy_listener.link);
         }
+
+        CORE_DELETE_COPY_MOVE(Resource)
+
+        operator wl_resource*() const { return resource; }
     };
-
-public:
-    way_resource_list()
-    {
-        root.next = &root;
-        root.prev = &root;
-    }
-
-    void emplace_back(wl_resource* resource)
-    {
-        if (!resource) return;
-
-        auto* node = new list_node{resource};
-
-        node->next = &root;
-        node->prev = root.prev;
-
-        root.prev->next = node;
-        root.prev = node;
-    }
-
-    void clear()
-    {
-        list_node* next = nullptr;
-        for (auto* node = root.next; node != &root; node = next) {
-            next = node->next;
-            delete node;
-        }
-        root.next = &root;
-        root.prev = &root;
-    }
-
-    void take_and_append_all(way_resource_list&& other)
-    {
-        if (other.root.next == &other.root) return;
-
-        other.root.next->prev = root.prev;
-        other.root.prev->next = &root;
-
-        root.prev->next = other.root.next;
-        root.prev       = other.root.prev;
-
-        other.root.next = &other.root;
-        other.root.prev = &other.root;
-    }
-
-    wl_resource* front() const
-    {
-        return root.next ? root.next->resource : nullptr;
-    }
-
-    iterator begin() const
-    {
-        return iterator{root.next};
-    }
-
-    iterator end() const
-    {
-        return iterator{&root};
-    }
-
-    ~way_resource_list()
-    {
-        clear();
-    }
-
-    CORE_DELETE_COPY_MOVE(way_resource_list)
-};
+}
 
 // -----------------------------------------------------------------------------
 
-struct way_listener
+namespace way
 {
-    void* data;
-    wl_listener listener;
-
-    way_listener() = default;
-
-    CORE_DELETE_COPY_MOVE(way_listener);
-
-    ~way_listener()
+    class ResourceList
     {
-        wl_list_remove(&listener.link);
-    }
+        struct list_node
+        {
+            wl_resource* resource = nullptr;
+            wl_listener destroy_listener {
+                .notify = on_destroy,
+            };
+            list_node* prev = nullptr;
+            list_node* next = nullptr;
+
+            list_node()
+            {
+                wl_list_init(&destroy_listener.link);
+            }
+
+            list_node(wl_resource* resource)
+                : resource(resource)
+            {
+                wl_resource_add_destroy_listener(resource, &destroy_listener);
+            }
+
+            static void on_destroy(wl_listener* listener, void* data)
+            {
+                list_node* self = wl_container_of(listener, self, destroy_listener);
+
+                // log_debug("cleaning up list_node: {}", (void*)self);
+                wl_list_init(&self->destroy_listener.link);
+
+                if (self->prev) self->prev->next = self->next;
+                if (self->next) self->next->prev = self->prev;
+
+                delete self;
+            }
+
+            ~list_node()
+            {
+                // log_debug("List node destroyed: {}", (void*)this);
+
+                wl_list_remove(&destroy_listener.link);
+            }
+
+            CORE_DELETE_COPY_MOVE(list_node)
+        };
+
+        list_node root;
+
+        struct iterator
+        {
+            const list_node* current;
+
+            iterator& operator++()
+            {
+                current = current->next;
+                return *this;
+            }
+
+            bool operator==(const iterator& other) const
+            {
+                return current == other.current;
+            }
+
+            wl_resource* operator*() const
+            {
+                return current->resource;
+            }
+        };
+
+    public:
+        ResourceList()
+        {
+            root.next = &root;
+            root.prev = &root;
+        }
+
+        void emplace_back(wl_resource* resource)
+        {
+            if (!resource) return;
+
+            auto* node = new list_node{resource};
+
+            node->next = &root;
+            node->prev = root.prev;
+
+            root.prev->next = node;
+            root.prev = node;
+        }
+
+        void clear()
+        {
+            list_node* next = nullptr;
+            for (auto* node = root.next; node != &root; node = next) {
+                next = node->next;
+                delete node;
+            }
+            root.next = &root;
+            root.prev = &root;
+        }
+
+        void take_and_append_all(way::ResourceList&& other)
+        {
+            if (other.root.next == &other.root) return;
+
+            other.root.next->prev = root.prev;
+            other.root.prev->next = &root;
+
+            root.prev->next = other.root.next;
+            root.prev       = other.root.prev;
+
+            other.root.next = &other.root;
+            other.root.prev = &other.root;
+        }
+
+        wl_resource* front() const
+        {
+            return root.next ? root.next->resource : nullptr;
+        }
+
+        iterator begin() const
+        {
+            return iterator{root.next};
+        }
+
+        iterator end() const
+        {
+            return iterator{&root};
+        }
+
+        ~ResourceList()
+        {
+            clear();
+        }
+
+        CORE_DELETE_COPY_MOVE(ResourceList)
+    };
+}
+
+// -----------------------------------------------------------------------------
+
+namespace way
+{
+    struct Listener
+    {
+        void* data;
+        wl_listener listener;
+
+        Listener() = default;
+
+        CORE_DELETE_COPY_MOVE(Listener);
+
+        ~Listener()
+        {
+            wl_list_remove(&listener.link);
+        }
+
+        template<typename T>
+        T* get() const
+        {
+            return way::get_userdata<T>(data);
+        }
+
+        static
+        way::Listener& from(wl_listener* listener)
+        {
+            way::Listener* way_listener = wl_container_of(listener, way_listener, listener);
+            return *way_listener;
+        }
+    };
 
     template<typename T>
-    T* get() const
+    T* get_userdata(wl_listener* listener)
     {
-        return way_get_userdata<T>(data);
+        return way::Listener::from(listener).get<T>();
     }
-
-    static
-    way_listener& from(wl_listener* listener)
-    {
-        way_listener* way_listener = wl_container_of(listener, way_listener, listener);
-        return *way_listener;
-    }
-};
-
-template<typename T>
-T* way_get_userdata(wl_listener* listener)
-{
-    return way_listener::from(listener).get<T>();
 }

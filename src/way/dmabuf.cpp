@@ -6,7 +6,7 @@ void create_params(wl_client* client, wl_resource* resource, u32 params_id);
 // -----------------------------------------------------------------------------
 
 static
-auto get_formats(way_server* server)
+auto get_formats(way::Server* server)
 {
     // TODO: Intersect against io::Output capabilities
 
@@ -17,11 +17,11 @@ auto get_formats(way_server* server)
         });
 }
 
-void way_dmabuf_init(way_server* server)
+void way::dmabuf::init(way::Server* server)
 {
     way_global(server, zwp_linux_dmabuf_v1);
 
-    struct tranche_entry
+    struct TrancheEntry
     {
         u32 format;
         u32 padding;
@@ -32,10 +32,10 @@ void way_dmabuf_init(way_server* server)
 
     // Enumerate formats
 
-    std::vector<tranche_entry> entries;
+    std::vector<TrancheEntry> entries;
     for (auto[format, modifiers] : get_formats(server)) {
         for (auto modifier : modifiers) {
-            entries.emplace_back(tranche_entry {
+            entries.emplace_back(TrancheEntry {
                 .format = format->drm,
                 .modifier = modifier,
             });
@@ -44,14 +44,14 @@ void way_dmabuf_init(way_server* server)
 
     // Copy to shared memory
 
-    usz size = entries.size() * sizeof(tranche_entry);
+    usz size = entries.size() * sizeof(TrancheEntry);
 
     auto fd = core::fd::adopt(core::check<memfd_create>(PROGRAM_NAME "-formats", MFD_ALLOW_SEALING | MFD_CLOEXEC).value);
     core::check<ftruncate>(fd.get(), size);
 
     auto mapped = core::check<mmap>(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0).value;
     std::memcpy(mapped, entries.data(), size);
-    munmap(mapped, size);
+    core::check<munmap>(mapped, size);
 
     // Seal file to prevent further writes
     core::check<fcntl>(fd.get(), F_ADD_SEALS, F_SEAL_WRITE | F_SEAL_SHRINK | F_SEAL_GROW);
@@ -69,7 +69,7 @@ void way_dmabuf_init(way_server* server)
 }
 
 static
-void send_feedback(way_server* server, wl_resource* resource)
+void send_feedback(way::Server* server, wl_resource* resource)
 {
     wl_array dev_id = {
         .size  = sizeof(server->gpu->drm.id),
@@ -84,7 +84,7 @@ void send_feedback(way_server* server, wl_resource* resource)
 
     way_send(server, zwp_linux_dmabuf_feedback_v1_send_tranche_target_device, resource, &dev_id);
     way_send(server, zwp_linux_dmabuf_feedback_v1_send_tranche_flags,   resource, 0);
-    way_send(server, zwp_linux_dmabuf_feedback_v1_send_tranche_formats, resource, core::ptr_to(way_to_wl_array<u16>(feedback.tranche_formats)));
+    way_send(server, zwp_linux_dmabuf_feedback_v1_send_tranche_formats, resource, core::ptr_to(way::to_wl_array<u16>(feedback.tranche_formats)));
     way_send(server, zwp_linux_dmabuf_feedback_v1_send_tranche_done,    resource);
 
     way_send(server, zwp_linux_dmabuf_feedback_v1_send_done, resource);
@@ -93,23 +93,23 @@ void send_feedback(way_server* server, wl_resource* resource)
 static
 void get_default_feedback(wl_client* client, wl_resource* resource, u32 id)
 {
-    send_feedback(way_get_userdata<way_server>(resource),
+    send_feedback(way::get_userdata<way::Server>(resource),
         way_resource_create_unsafe(zwp_linux_dmabuf_feedback_v1, client, resource, id, nullptr));
 }
 
 static
 void get_surface_feedback(wl_client* client, wl_resource* resource, u32 id, wl_resource* surface)
 {
-    send_feedback(way_get_userdata<way_server>(resource),
+    send_feedback(way::get_userdata<way::Server>(resource),
         way_resource_create_unsafe(zwp_linux_dmabuf_feedback_v1, client, resource, id, nullptr));
 }
 
 WAY_INTERFACE(zwp_linux_dmabuf_feedback_v1) = {
-    .destroy = way_simple_destroy,
+    .destroy = way::simple_destroy,
 };
 
 WAY_INTERFACE(zwp_linux_dmabuf_v1) = {
-    .destroy = way_simple_destroy,
+    .destroy = way::simple_destroy,
     .create_params = create_params,
     .get_default_feedback = get_default_feedback,
     .get_surface_feedback = get_surface_feedback,
@@ -142,21 +142,24 @@ WAY_BIND_GLOBAL(zwp_linux_dmabuf_v1, bind)
 
 // -----------------------------------------------------------------------------
 
-struct way_dma_params
+namespace way
 {
-    way_server* server;
+    struct DmaParams
+    {
+        way::Server* server;
 
-    way_resource resource;
+        way::Resource resource;
 
-    gpu::DmaParams params;
-    u32 planes_set;
-};
+        gpu::DmaParams params;
+        u32 planes_set;
+    };
+}
 
 static
 void create_params(wl_client* client, wl_resource* resource, u32 params_id)
 {
-    auto params = core::create<way_dma_params>();
-    params->server = way_get_userdata<way_server>(resource);
+    auto params = core::create<way::DmaParams>();
+    params->server = way::get_userdata<way::Server>(resource);
     params->resource = way_resource_create_refcounted(zwp_linux_buffer_params_v1, client, resource, params_id, params.get());
 }
 
@@ -165,16 +168,16 @@ void params_add(wl_client* client, wl_resource* resource, int _fd, u32 plane_idx
 {
     auto fd = core::fd::adopt(_fd);
 
-    auto* params = way_get_userdata<way_dma_params>(resource);
+    auto* params = way::get_userdata<way::DmaParams>(resource);
     auto* server = params->server;
 
     if (plane_idx >= gpu::max_dma_planes) {
-        way_post_error(server, resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_IDX, "Invalid plane index");
+        way::post_error(server, resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_IDX, "Invalid plane index");
         return;
     }
 
     if (params->planes_set & (1 << plane_idx)) {
-        way_post_error(server, resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_SET, "Plane already set");
+        way::post_error(server, resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_PLANE_SET, "Plane already set");
         return;
     }
 
@@ -183,7 +186,7 @@ void params_add(wl_client* client, wl_resource* resource, int _fd, u32 plane_idx
     if (!params->planes_set) {
         params->params.modifier = drm_modifier;
     } else if (params->params.modifier != drm_modifier) {
-        way_post_error(server, resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_FORMAT, "All planes must use the same DRM modifier");
+        way::post_error(server, resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_FORMAT, "All planes must use the same DRM modifier");
         params->planes_set = ~0u;
         return;
     }
@@ -211,43 +214,46 @@ void params_add(wl_client* client, wl_resource* resource, int _fd, u32 plane_idx
     }
 }
 
-struct way_dma_buffer : way_buffer
+namespace way
 {
-    way_server* server;
-    way_resource resource;
+    struct DmaBuffer : way::Buffer
+    {
+        way::Server* server;
+        way::Resource resource;
 
-    core::Ref<gpu::Image> image;
+        core::Ref<gpu::Image> image;
 
-    std::optional<gpu::DmaParams> params;
+        std::optional<gpu::DmaParams> params;
 
-    virtual auto acquire(way_surface*, way_surface_state& from) -> core::Ref<gpu::Image> final override;
-};
+        virtual auto acquire(way::Surface*, way::SurfaceState& from) -> core::Ref<gpu::Image> final override;
+    };
+}
 
 static
-auto create_buffer(way_dma_params* dma_params, u32 buffer_id, vec2u32 extent, gpu::Format format,
-                   core::Flags<zwp_linux_buffer_params_v1_flags> flags) -> way_dma_buffer*
+auto create_buffer(way::DmaParams* dma_params, u32 buffer_id, vec2u32 extent, gpu::Format format,
+                   core::Flags<zwp_linux_buffer_params_v1_flags> flags) -> way::DmaBuffer*
 {
     auto* server = dma_params->server;
 
     if (!format) {
-        way_post_error(server, dma_params->resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_FORMAT, "Invalid format");
+        way::post_error(server, dma_params->resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INVALID_FORMAT, "Invalid format");
         return nullptr;
     }
 
     auto& params = dma_params->params;
 
     if (dma_params->planes_set == ~0u) {
-        way_post_error(server, dma_params->resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INCOMPLETE, "Attempted to use buffer params with previous errors");
+        way::post_error(server, dma_params->resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INCOMPLETE, "Attempted to use buffer params with previous errors");
         return nullptr;
     }
     if (!dma_params->planes_set || std::popcount(dma_params->planes_set + 1) != 1) {
-        way_post_error(server, dma_params->resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INCOMPLETE, "Incomplete plane set");
+        way::post_error(server, dma_params->resource, ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_INCOMPLETE, "Incomplete plane set");
         return nullptr;
     }
 
     params.planes.count = std::popcount(dma_params->planes_set);
 
-    auto buffer = core::create<way_dma_buffer>();
+    auto buffer = core::create<way::DmaBuffer>();
     buffer->server = server;
     buffer->resource = way_resource_create_refcounted(wl_buffer,
         wl_resource_get_client(dma_params->resource), dma_params->resource, buffer_id, buffer.get());
@@ -271,7 +277,7 @@ auto create_buffer(way_dma_params* dma_params, u32 buffer_id, vec2u32 extent, gp
 static
 void create_buffer(wl_client* client, wl_resource* _params, i32 width, i32 height, u32 format, u32 flags)
 {
-    auto* params = way_get_userdata<way_dma_params>(_params);
+    auto* params = way::get_userdata<way::DmaParams>(_params);
     auto* server = params->server;
 
     auto buffer = create_buffer(params, 0, {width, height}, gpu::format::from_drm(format), zwp_linux_buffer_params_v1_flags(flags));
@@ -285,12 +291,12 @@ void create_buffer(wl_client* client, wl_resource* _params, i32 width, i32 heigh
 static
 void create_buffer_immed(wl_client* client, wl_resource* _params, u32 buffer_id, i32 width, i32 height, u32 format, u32 flags)
 {
-    auto* params = way_get_userdata<way_dma_params>(_params);
+    auto* params = way::get_userdata<way::DmaParams>(_params);
     create_buffer(params, buffer_id, {width, height}, gpu::format::from_drm(format), zwp_linux_buffer_params_v1_flags(flags));
 }
 
 WAY_INTERFACE(zwp_linux_buffer_params_v1) = {
-    .destroy      = way_simple_destroy,
+    .destroy      = way::simple_destroy,
     .add          = params_add,
     .create       = create_buffer,
     .create_immed = create_buffer_immed,
@@ -298,7 +304,7 @@ WAY_INTERFACE(zwp_linux_buffer_params_v1) = {
 
 // -----------------------------------------------------------------------------
 
-auto way_dma_buffer::acquire(way_surface* surface, way_surface_state& packet) -> core::Ref<gpu::Image>
+auto way::DmaBuffer::acquire(way::Surface* surface, way::SurfaceState& packet) -> core::Ref<gpu::Image>
 {
     if (!params) {
         params = gpu::image::export_dmabuf(image.get());

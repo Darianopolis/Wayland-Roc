@@ -1,52 +1,55 @@
 #include "internal.hpp"
 
-struct way_axis_region
+namespace way
 {
-    i32 pos;
-    i32 size;
-};
+    struct AxisRegion
+    {
+        i32 pos;
+        i32 size;
+    };
 
-struct way_axis_overlaps
+    struct AxisOverlaps
+    {
+        i32 start;
+        i32 end;
+    };
+
+    struct PositionerRules
+    {
+        vec2i32 size;
+        rect2i32 anchor_rect;
+        xdg_positioner_anchor anchor;
+        xdg_positioner_gravity gravity;
+        core::Flags<xdg_positioner_constraint_adjustment> constraint_adjustment;
+        vec2i32 offset;
+        bool reactive = false;
+        vec2i32 parent_size;
+        u32 parent_configure;
+    };
+
+    struct Positioner
+    {
+        way::Server* server;
+
+        way::Resource resource;
+
+        way::PositionerRules rules;
+    };
+}
+
+void way::positioner::create(wl_client* client, wl_resource* resource, u32 id)
 {
-    i32 start;
-    i32 end;
-};
-
-struct way_positioner_rules
-{
-    vec2i32 size;
-    rect2i32 anchor_rect;
-    xdg_positioner_anchor anchor;
-    xdg_positioner_gravity gravity;
-    core::Flags<xdg_positioner_constraint_adjustment> constraint_adjustment;
-    vec2i32 offset;
-    bool reactive = false;
-    vec2i32 parent_size;
-    u32 parent_configure;
-};
-
-struct way_positioner
-{
-    way_server* server;
-
-    way_resource resource;
-
-    way_positioner_rules rules;
-};
-
-void way_create_positioner(wl_client* client, wl_resource* resource, u32 id)
-{
-    auto positioner = core::create<way_positioner>();
+    auto positioner = core::create<way::Positioner>();
     positioner->resource = way_resource_create_refcounted(xdg_positioner, client, resource, id, positioner.get());
 }
 
 #define SET(Name, Expr, ...) \
     .set_##Name = [](wl_client* client, wl_resource* resource __VA_OPT__(,) __VA_ARGS__) { \
-        way_get_userdata<way_positioner>(resource)->rules.Name = (Expr); \
+        way::get_userdata<way::Positioner>(resource)->rules.Name = (Expr); \
     }
 
 WAY_INTERFACE(xdg_positioner) = {
-    .destroy = way_simple_destroy,
+    .destroy = way::simple_destroy,
     SET(size,                  vec2i32(width, height),                       i32 width, i32 height),
     SET(anchor_rect,           rect2i32({x, y}, {width, height}, core::xywh), i32 x, i32 y, i32 width, i32 height),
     SET(anchor,                xdg_positioner_anchor(anchor),                u32 anchor),
@@ -62,7 +65,7 @@ WAY_INTERFACE(xdg_positioner) = {
 
 struct way_xdg_positioner_axis_rules
 {
-    way_axis_region anchor;
+    way::AxisRegion anchor;
     i32 size;
     i32 gravity;
     bool flip;
@@ -73,7 +76,7 @@ struct way_xdg_positioner_axis_rules
 #define WAY_NOISY_POSITIONERS 1
 
 static
-way_axis_region positioner_apply_axis(const way_xdg_positioner_axis_rules& rules, way_axis_region constraint)
+way::AxisRegion positioner_apply_axis(const way_xdg_positioner_axis_rules& rules, way::AxisRegion constraint)
 {
 #if WAY_NOISY_POSITIONERS
     log_debug("way_xdg_position_apply_axis");
@@ -85,15 +88,15 @@ way_axis_region positioner_apply_axis(const way_xdg_positioner_axis_rules& rules
     log_debug("  resize = {}", rules.resize);
 #endif
 
-    auto get_position = [](auto& rules) -> way_axis_region {
+    auto get_position = [](auto& rules) -> way::AxisRegion {
         return {rules.anchor.pos + rules.gravity - rules.size, rules.size};
     };
 
-    auto get_overlaps = [&](way_axis_region region) -> way_axis_overlaps {
+    auto get_overlaps = [&](way::AxisRegion region) -> way::AxisOverlaps {
         return {constraint.pos - region.pos, region.pos + region.size - (constraint.pos + constraint.size)};
     };
 
-    auto is_unconstrained = [&](way_axis_region region) {
+    auto is_unconstrained = [&](way::AxisRegion region) {
         auto overlaps = get_overlaps(region);
         return overlaps.start <= 0 && overlaps.end <= 0;
     };
@@ -191,7 +194,7 @@ core::Vec<2, T> positioner_gravity_to_rel(xdg_positioner_gravity gravity, core::
 #undef EDGES_TO_REL_CASES
 
 static
-void positioner_apply_axis_from_rules(const way_positioner_rules& rules, rect2i32 constraint, rect2i32& target, u32 axis)
+void positioner_apply_axis_from_rules(const way::PositionerRules& rules, rect2i32 constraint, rect2i32& target, u32 axis)
 {
     auto anchor = positioner_anchor_to_rel(rules.anchor, rules.anchor_rect.extent);
     auto gravity = positioner_gravity_to_rel(rules.gravity, rules.size);
@@ -210,7 +213,7 @@ void positioner_apply_axis_from_rules(const way_positioner_rules& rules, rect2i3
         .resize = bool(rules.constraint_adjustment & resize_adjustments[axis]),
     };
     auto offset = rules.anchor_rect.origin[axis] + rules.offset[axis];
-    way_axis_region constraint_region {
+    way::AxisRegion constraint_region {
         .pos = constraint.origin[axis] - offset,
         .size = constraint.extent[axis],
     };
@@ -220,7 +223,7 @@ void positioner_apply_axis_from_rules(const way_positioner_rules& rules, rect2i3
 }
 
 static
-rect2i32 positioner_apply(const way_positioner_rules& rules, rect2i32 constraint)
+rect2i32 positioner_apply(const way::PositionerRules& rules, rect2i32 constraint)
 {
     rect2i32 target;
     positioner_apply_axis_from_rules(rules, constraint, target, 0);
@@ -231,7 +234,7 @@ rect2i32 positioner_apply(const way_positioner_rules& rules, rect2i32 constraint
 // -----------------------------------------------------------------------------
 
 static
-void popup_update_geometry(way_surface* surface)
+void popup_update_geometry(way::Surface* surface)
 {
     auto position    = surface->popup.position;
     auto geom        = surface->current.xdg.geometry;
@@ -241,7 +244,7 @@ void popup_update_geometry(way_surface* surface)
 }
 
 static
-void position(way_surface* surface, const way_positioner_rules& rules, std::optional<u32> token = std::nullopt)
+void position(way::Surface* surface, const way::PositionerRules& rules, std::optional<u32> token = std::nullopt)
 {
     auto* server = surface->client->server;
 
@@ -270,26 +273,26 @@ void position(way_surface* surface, const way_positioner_rules& rules, std::opti
     }
     way_send(server, xdg_popup_send_configure, surface->popup.resource,
         geometry.origin.x, geometry.origin.y, geometry.extent.x, geometry.extent.y);
-    way_xdg_surface_configure(surface);
+    way::xdg_surface::configure(surface);
     popup_update_geometry(surface);
 }
 
-void way_get_popup(wl_client* client, wl_resource* resource, u32 id, wl_resource* wl_parent, wl_resource* positioner)
+void way::get_popup(wl_client* client, wl_resource* resource, u32 id, wl_resource* wl_parent, wl_resource* positioner)
 {
-    auto* surface = way_get_userdata<way_surface>(resource);
-    surface->role = way_surface_role::xdg_popup;
+    auto* surface = way::get_userdata<way::Surface>(resource);
+    surface->role = way::SurfaceRole::xdg_popup;
     surface->popup.resource = way_resource_create_refcounted(xdg_popup, client, resource, id, surface);
 
-    auto* parent = way_get_userdata<way_surface>(wl_parent);
+    auto* parent = way::get_userdata<way::Surface>(wl_parent);
     surface->parent = parent;
 
     // Place into parent's surface stack
     scene::tree::place_above(parent->scene.tree.get(), nullptr, surface->scene.tree.get());
 
-    position(surface, way_get_userdata<way_positioner>(positioner)->rules);
+    position(surface, way::get_userdata<way::Positioner>(positioner)->rules);
 }
 
-void way_popup_apply(way_surface* surface, way_surface_state& from)
+void way::popup::apply(way::Surface* surface, way::SurfaceState& from)
 {
     popup_update_geometry(surface);
 }
@@ -297,12 +300,12 @@ void way_popup_apply(way_surface* surface, way_surface_state& from)
 static
 void reposition(wl_client* client, wl_resource* resource, wl_resource* positioner, u32 token)
 {
-    auto* surface = way_get_userdata<way_surface>(resource);
-    position(surface, way_get_userdata<way_positioner>(positioner)->rules, token);
+    auto* surface = way::get_userdata<way::Surface>(resource);
+    position(surface, way::get_userdata<way::Positioner>(positioner)->rules, token);
 }
 
 WAY_INTERFACE(xdg_popup) = {
-    .destroy = way_role_destroy,
+    .destroy = way::role_destroy,
     WAY_STUB(grab),
     .reposition = reposition,
 };
