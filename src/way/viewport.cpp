@@ -68,22 +68,22 @@ void way_viewport_apply(way_surface* surface, way_surface_state& from)
         auto src = to.buffer_source;
         src.origin /= vec2f32(buffer->extent);
         src.extent /= vec2f32(buffer->extent);
-        scene_texture_set_src(surface->scene.texture.get(), src);
+        scene::texture::set_src(surface->scene.texture.get(), src);
 
     } else if (!to.is_set(way_surface_committed_state::buffer_source)) {
-        scene_texture_set_src(surface->scene.texture.get(), {{}, {1, 1}, core::xywh});
+        scene::texture::set_src(surface->scene.texture.get(), {{}, {1, 1}, core::xywh});
     }
 
     // Destination
 
     if (to.is_set(way_surface_committed_state::buffer_destination)) {
-        scene_texture_set_dst(surface->scene.texture.get(), {{}, to.buffer_destination, core::xywh});
+        scene::texture::set_dst(surface->scene.texture.get(), {{}, to.buffer_destination, core::xywh});
 
     } else if (to.is_set(way_surface_committed_state::buffer_source)) {
-        scene_texture_set_dst(surface->scene.texture.get(), {{}, to.buffer_source.extent, core::xywh});
+        scene::texture::set_dst(surface->scene.texture.get(), {{}, to.buffer_source.extent, core::xywh});
 
     } else if (buffer) {
         // Use buffer extent if destination and source have not been set before
-        scene_texture_set_dst(surface->scene.texture.get(), {{}, buffer->extent, core::xywh});
+        scene::texture::set_dst(surface->scene.texture.get(), {{}, buffer->extent, core::xywh});
     }
 }

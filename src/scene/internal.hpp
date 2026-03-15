@@ -6,20 +6,20 @@
 
 // -----------------------------------------------------------------------------
 
-struct scene_output {
-    scene_client* client;
+struct scene::Output {
+    scene::Client* client;
     rect2f32      viewport;
 
-    ~scene_output();
+    ~Output();
 };
 
 // -----------------------------------------------------------------------------
 
 struct scene_cursor_manager;
 
-void scene_cursor_manager_init(scene_context*);
+void scene_cursor_manager_init(scene::Context*);
 
-struct scene_context
+struct scene::Context
 {
     gpu::Context* gpu;
 
@@ -30,160 +30,194 @@ struct scene_context
         core::Ref<gpu::Sampler>  sampler;
     } render;
 
-    scene_system_id prev_system_id = {};
+    scene::SystemId prev_system_id = {};
 
-    core::Ref<scene_tree> root_tree;
-    core::EnumMap<scene_layer, core::Ref<scene_tree>> layers;
+    core::Ref<scene::Tree> root_tree;
+    core::EnumMap<scene::Layer, core::Ref<scene::Tree>> layers;
 
-    std::vector<scene_output*> outputs;
+    std::vector<scene::Output*> outputs;
 
-    std::vector<scene_client*> clients;
-    std::vector<scene_window*> windows;
-    scene_system_id            window_system;
+    std::vector<scene::Client*> clients;
+    std::vector<scene::Window*> windows;
+    scene::SystemId            window_system;
 
     struct {
-        core::Ref<scene_keyboard> keyboard;
-        core::Ref<scene_pointer>  pointer;
+        core::Ref<scene::Keyboard> keyboard;
+        core::Ref<scene::Pointer>  pointer;
         std::vector<io::InputDevice*> led_devices;
     } seat;
 
-    core::Ref<scene_data_source> selection;
+    core::Ref<scene::DataSource> selection;
 
     core::Ref<scene_cursor_manager> cursor_manager;
 
-    ~scene_context();
+    ~Context();
 };
 
-void scene_broadcast_event(scene_context*, scene_event*);
+void scene_broadcast_event(scene::Context*, scene::Event*);
 
-void scene_render_init(scene_context*);
+void scene_render_init(scene::Context*);
 
 // -----------------------------------------------------------------------------
 
-struct scene_client
+struct scene::Client
 {
-    scene_context* ctx;
+    scene::Context* ctx;
 
-    std::move_only_function<scene_event_handler_fn> event_handler;
+    std::move_only_function<scene::EventHandlerFn> event_handler;
 
     u32 input_regions = 0;
 
-    ~scene_client();
+    ~Client();
 };
 
-void scene_client_post_event(scene_client*, scene_event*);
+void scene_client_post_event(scene::Client*, scene::Event*);
 
 // -----------------------------------------------------------------------------
 
-struct scene_window
+struct scene::Window
 {
-    scene_client* client;
+    scene::Client* client;
 
     vec2f32 extent;
     bool mapped;
 
     std::string title;
 
-    core::Ref<scene_tree> tree;
+    core::Ref<scene::Tree> tree;
 
-    ~scene_window();
+    ~Window();
 };
 
 // -----------------------------------------------------------------------------
 
-struct scene_hotkey_press_state
+namespace scene
 {
-    core::Flags<scene_modifier> modifiers;
-    scene_client*         client;
-};
+    struct HotkeyPressState
+    {
+        core::Flags<scene::Modifier> modifiers;
+        scene::Client*         client;
+    };
 
-struct scene_hotkey_map {
-    core::Map<scene_hotkey, scene_client*> registered;
-    core::Map<scene_scancode, scene_hotkey_press_state> pressed;
-};
+    struct HotkeyMap {
+        core::Map<scene::Hotkey, scene::Client*> registered;
+        core::Map<scene::Scancode, scene::HotkeyPressState> pressed;
+    };
+}
 
-struct scene_input_device
+struct scene::InputDevice
 {
-    scene_input_device_type type;
-    scene_context* ctx;
+    scene::InputDeviceType type;
+    scene::Context* ctx;
 
-    scene_hotkey_map hotkeys;
+    scene::HotkeyMap hotkeys;
 };
 
-struct scene_focus
+namespace scene
 {
-    scene_client*       client = nullptr;
-    scene_input_region* region = nullptr;
+    struct Focus
+    {
+        scene::Client*       client = nullptr;
+        scene::InputRegion* region = nullptr;
 
-    constexpr bool operator==(const scene_focus&) const noexcept = default;
-};
+        constexpr bool operator==(const scene::Focus&) const noexcept = default;
+    };
+}
 
 // -----------------------------------------------------------------------------
 
-struct scene_keyboard : scene_input_device, scene_keyboard_info
+struct scene::Keyboard : scene::InputDevice, scene::KeyboardInfo
 {
     core::CountingSet<u32> pressed;
 
-    core::Flags<scene_modifier> depressed;
-    core::Flags<scene_modifier> latched;
-    core::Flags<scene_modifier> locked;
+    core::Flags<scene::Modifier> depressed;
+    core::Flags<scene::Modifier> latched;
+    core::Flags<scene::Modifier> locked;
 
-    core::EnumMap<scene_modifier, xkb_mod_mask_t> mod_masks;
+    core::EnumMap<scene::Modifier, xkb_mod_mask_t> mod_masks;
 
-    scene_focus focus;
+    scene::Focus focus;
 
-    ~scene_keyboard();
+    ~Keyboard();
 };
 
-auto scene_keyboard_create(scene_context*) -> core::Ref<scene_keyboard>;
+namespace scene::keyboard
+{
+    auto create(scene::Context*) -> core::Ref<scene::Keyboard>;
+}
 
 // -----------------------------------------------------------------------------
 
-struct scene_pointer : scene_input_device
+struct scene::Pointer : scene::InputDevice
 {
     core::CountingSet<u32> pressed;
 
-    core::Ref<scene_tree> tree;
+    core::Ref<scene::Tree> tree;
 
-    std::move_only_function<scene_pointer_driver_fn> driver;
+    std::move_only_function<scene::PointerDriverFn> driver;
 
-    scene_focus focus;
+    scene::Focus focus;
 };
 
-void scene_update_pointer_focus(scene_context*);
-
-auto scene_pointer_create(scene_context*) -> core::Ref<scene_pointer>;
-
-// -----------------------------------------------------------------------------
-
-auto scene_find_input_region_at(scene_tree* tree, vec2f32 pos) -> scene_input_region*;
-
-// -----------------------------------------------------------------------------
-
-struct scene_data_source
+namespace scene
 {
-    scene_client* client;
+    void update_pointer_focus(scene::Context*);
+}
+
+namespace scene::pointer
+{
+    auto create(scene::Context*) -> core::Ref<scene::Pointer>;
+}
+
+// -----------------------------------------------------------------------------
+
+namespace scene
+{
+    auto find_input_region_at(scene::Tree* tree, vec2f32 pos) -> scene::InputRegion*;
+}
+
+// -----------------------------------------------------------------------------
+
+struct scene::DataSource
+{
+    scene::Client* client;
 
     core::FlatSet<std::string> offered;
 
-    scene_data_source_ops ops;
+    scene::DataSourceOps ops;
 
-    ~scene_data_source();
+    ~DataSource();
 };
 
-void scene_offer_selection(scene_client*, scene_data_source*);
+namespace scene
+{
+    void offer_selection(scene::Client*, scene::DataSource*);
+}
 
 // -----------------------------------------------------------------------------
 
-void scene_output_request_frame(scene_output*);
+namespace scene::output
+{
+    void request_frame(scene::Output*);
+}
 
 // -----------------------------------------------------------------------------
 
-void scene_handle_input_added(  scene_context*, io::InputDevice*);
-void scene_handle_input_removed(scene_context*, io::InputDevice*);
-void scene_handle_input(        scene_context*, const io::InputEvent&);
+namespace scene
+{
+    void handle_input_added(  scene::Context*, io::InputDevice*);
+    void handle_input_removed(scene::Context*, io::InputDevice*);
+    void handle_input(        scene::Context*, const io::InputEvent&);
+}
 
 // -----------------------------------------------------------------------------
 
-void scene_keyboard_set_focus(scene_keyboard* keyboard, scene_focus new_focus);
-void scene_pointer_set_focus( scene_pointer*  pointer,  scene_focus new_focus);
+namespace scene::keyboard
+{
+    void set_focus(scene::Keyboard* keyboard, scene::Focus new_focus);
+}
+
+namespace scene::pointer
+{
+    void set_focus( scene::Pointer*  pointer,  scene::Focus new_focus);
+}

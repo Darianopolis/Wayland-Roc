@@ -28,9 +28,9 @@ void get_toplevel(wl_client* client, wl_resource* resource, u32 id)
     surface->role = way_surface_role::xdg_toplevel;
     surface->toplevel.resource = way_resource_create_refcounted(xdg_toplevel, client, resource, id, surface);
 
-    surface->toplevel.window = scene_window_create(surface->client->scene.get());
+    surface->toplevel.window = scene::window::create(surface->client->scene.get());
 
-    scene_tree_place_above(scene_window_get_tree(surface->toplevel.window.get()), nullptr, surface->scene.tree.get());
+    scene::tree::place_above(scene::window::get_tree(surface->toplevel.window.get()), nullptr, surface->scene.tree.get());
 }
 
 static
@@ -87,9 +87,9 @@ void way_xdg_surface_configure(way_surface* surface)
 void way_toplevel_on_map_change(way_surface* surface, bool mapped)
 {
     if (mapped) {
-        scene_window_map(surface->toplevel.window.get());
+        scene::window::map(surface->toplevel.window.get());
     } else {
-        scene_window_unmap(surface->toplevel.window.get());
+        scene::window::unmap(surface->toplevel.window.get());
     }
 }
 
@@ -108,9 +108,9 @@ void way_toplevel_on_reposition(way_surface* surface, rect2f32 frame, vec2f32 gr
 {
     if (surface->toplevel.anchor.extent == frame.extent) {
         // Move
-        scene_window_set_frame(surface->toplevel.window.get(), {
+        scene::window::set_frame(surface->toplevel.window.get(), {
             frame.origin,
-            scene_window_get_frame(surface->toplevel.window.get()).extent,
+            scene::window::get_frame(surface->toplevel.window.get()).extent,
             core::xywh
         });
     } else {
@@ -159,8 +159,8 @@ void way_toplevel_apply(way_surface* surface, way_surface_state& from)
         vec2f32 rel = 1.f - ((surface->toplevel.gravity + 1.f) * .5f);
         frame.origin -= rel * (extent - anchor.extent);
 
-        scene_window_set_frame(surface->toplevel.window.get(), frame);
-        scene_tree_set_translation(surface->scene.tree.get(), -surface->current.xdg.geometry.origin);
+        scene::window::set_frame(surface->toplevel.window.get(), frame);
+        scene::tree::set_translation(surface->scene.tree.get(), -surface->current.xdg.geometry.origin);
 
         surface->toplevel.pending = false;
         if (surface->toplevel.queued) {

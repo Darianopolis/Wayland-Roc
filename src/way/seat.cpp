@@ -22,7 +22,7 @@ auto get_keymap_file(xkb_keymap* keymap) -> way_keymap
 
 void way_seat_init(way_server* server)
 {
-    auto& kb_info = scene_keyboard_get_info(scene_get_keyboard(server->scene));
+    auto& kb_info = scene::keyboard::get_info(scene::get_keyboard(server->scene));
 
     server->keyboard.keymap = get_keymap_file(kb_info.keymap);
 }
@@ -42,7 +42,7 @@ void get_keyboard(wl_client* wl_client, wl_resource* resource, u32 id)
         WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1,
         server->keyboard.keymap.fd.get(), server->keyboard.keymap.size);
 
-    auto& kb_info = scene_keyboard_get_info(scene_get_keyboard(server->scene));
+    auto& kb_info = scene::keyboard::get_info(scene::get_keyboard(server->scene));
 
     if (wl_resource_get_version(kb) >= WL_KEYBOARD_REPEAT_INFO_SINCE_VERSION) {
         way_send(server, wl_keyboard_send_repeat_info, kb, kb_info.rate, kb_info.delay);
@@ -70,16 +70,16 @@ void set_cursor(wl_client* wl_client, wl_resource* resource, u32 serial, wl_reso
     auto* surface = wl_surface ? way_get_userdata<way_surface>(wl_surface) : nullptr;
 
     if (surface) {
-        scene_tree_set_translation(surface->scene.tree.get(), {-hot_x, -hot_y});
+        scene::tree::set_translation(surface->scene.tree.get(), {-hot_x, -hot_y});
 
         if (surface->role != way_surface_role::cursor) {
             surface->role = way_surface_role::cursor;
-            scene_node_unparent(surface->scene.input_region.get());
+            scene::node::unparent(surface->scene.input_region.get());
         }
     }
 
     if (client->server->pointer.scene) {
-        scene_pointer_set_cursor(client->server->pointer.scene, surface ? surface->scene.tree.get() : nullptr);
+        scene::pointer::set_cursor(client->server->pointer.scene, surface ? surface->scene.tree.get() : nullptr);
     }
 }
 
@@ -113,7 +113,7 @@ WAY_BIND_GLOBAL(wl_seat, bind)
 // -----------------------------------------------------------------------------
 
 static
-auto find_surface(way_client* client, scene_input_region* region) -> way_surface*
+auto find_surface(way_client* client, scene::InputRegion* region) -> way_surface*
 {
     if (!region) return nullptr;
     if (region->client != client->scene.get()) return nullptr;
@@ -151,7 +151,7 @@ void keyboard_leave(way_client* client)
     server->focus.keyboard = nullptr;
 }
 
-void way_seat_on_keyboard_leave(way_client* client, scene_event* event)
+void way_seat_on_keyboard_leave(way_client* client, scene::Event* event)
 {
     keyboard_leave(client);
 }
@@ -164,7 +164,7 @@ auto find_root_toplevel(way_surface* surface) -> way_surface*
     return find_root_toplevel(surface->parent.get());
 }
 
-void way_seat_on_keyboard_enter(way_client* client, scene_event* event)
+void way_seat_on_keyboard_enter(way_client* client, scene::Event* event)
 {
     auto* server = client->server;
 
@@ -178,7 +178,7 @@ void way_seat_on_keyboard_enter(way_client* client, scene_event* event)
     keyboard_leave(client);
 
     if (surface->toplevel.window) {
-        scene_window_raise(surface->toplevel.window.get());
+        scene::window::raise(surface->toplevel.window.get());
     }
 
     server->keyboard.scene = event->keyboard.keyboard;
@@ -186,7 +186,7 @@ void way_seat_on_keyboard_enter(way_client* client, scene_event* event)
     u32 serial = way_next_serial(server);
 
     if (surface->wl_surface) {
-        auto pressed = way_to_wl_array<const u32>(scene_keyboard_get_pressed(server->keyboard.scene));
+        auto pressed = way_to_wl_array<const u32>(scene::keyboard::get_pressed(server->keyboard.scene));
         for (auto* resource : client->keyboards) {
             way_send(server, wl_keyboard_send_enter, resource, serial, surface->wl_surface, &pressed);
         }
@@ -202,9 +202,9 @@ void way_seat_on_keyboard_enter(way_client* client, scene_event* event)
 // -----------------------------------------------------------------------------
 
 static
-auto get_fixed_pos(way_surface* surface, scene_pointer* pointer) -> std::pair<wl_fixed_t, wl_fixed_t>
+auto get_fixed_pos(way_surface* surface, scene::Pointer* pointer) -> std::pair<wl_fixed_t, wl_fixed_t>
 {
-    auto local = scene_pointer_get_position(pointer) - scene_tree_get_position(surface->scene.tree.get());
+    auto local = scene::pointer::get_position(pointer) - scene::tree::get_position(surface->scene.tree.get());
 
     return {wl_fixed_from_double(local.x), wl_fixed_from_double(local.y)};
 }
@@ -220,7 +220,7 @@ void pointer_leave_surface(way_client* client, way_surface* surface, u32 serial)
     }
 }
 
-void way_seat_on_pointer_leave(way_client* client, scene_event* event)
+void way_seat_on_pointer_leave(way_client* client, scene::Event* event)
 {
     auto* server = client->server;
 
@@ -232,7 +232,7 @@ void way_seat_on_pointer_leave(way_client* client, scene_event* event)
     server->pointer.scene = nullptr;
 }
 
-void way_seat_on_pointer_enter(way_client* client, scene_event* event)
+void way_seat_on_pointer_enter(way_client* client, scene::Event* event)
 {
     auto* server = client->server;
 
@@ -258,7 +258,7 @@ void way_seat_on_pointer_enter(way_client* client, scene_event* event)
 
 // -----------------------------------------------------------------------------
 
-void way_seat_on_key(way_client* client, scene_event* event)
+void way_seat_on_key(way_client* client, scene::Event* event)
 {
     auto* server = client->server;
     u32 serial = way_next_serial(server);
@@ -271,11 +271,11 @@ void way_seat_on_key(way_client* client, scene_event* event)
     }
 }
 
-void way_seat_on_modifier(way_client* client, scene_event* event)
+void way_seat_on_modifier(way_client* client, scene::Event* event)
 {
     auto* server = client->server;
     u32 serial = way_next_serial(server);
-    auto kb = scene_keyboard_get_info(server->keyboard.scene);
+    auto kb = scene::keyboard::get_info(server->keyboard.scene);
 
     for (auto* resource : client->keyboards) {
         way_send(server, wl_keyboard_send_modifiers, resource, serial,
@@ -296,7 +296,7 @@ void pointer_frame(way_server* server, wl_resource* resource)
     }
 }
 
-void way_seat_on_motion(way_client* client, scene_event* event)
+void way_seat_on_motion(way_client* client, scene::Event* event)
 {
     auto* server = client->server;
     auto* surface = server->focus.pointer.get();
@@ -311,7 +311,7 @@ void way_seat_on_motion(way_client* client, scene_event* event)
     }
 }
 
-void way_seat_on_button(way_client* client, scene_event* event)
+void way_seat_on_button(way_client* client, scene::Event* event)
 {
     auto* server = client->server;
     u32 serial = way_next_serial(server);
@@ -325,7 +325,7 @@ void way_seat_on_button(way_client* client, scene_event* event)
     }
 }
 
-void way_seat_on_scroll(way_client* client, scene_event* event)
+void way_seat_on_scroll(way_client* client, scene::Event* event)
 {
     auto* server = client->server;
     u32 time = elapsed_ms(server);

@@ -1,6 +1,6 @@
 #include "internal.hpp"
 
-scene_client::~scene_client()
+scene::Client::~Client()
 {
     core_assert(input_regions == 0);
 
@@ -9,31 +9,31 @@ scene_client::~scene_client()
         core_assert(window->client != this);
     }
 
-    if (auto* keyboard = scene_get_keyboard(ctx); keyboard->focus.client == this) {
-        scene_keyboard_set_focus(keyboard, {});
+    if (auto* keyboard = scene::get_keyboard(ctx); keyboard->focus.client == this) {
+        scene::keyboard::set_focus(keyboard, {});
     }
 
-    if (auto* pointer = scene_get_pointer(ctx); pointer->focus.client == this) {
-        scene_pointer_set_focus(pointer, {});
+    if (auto* pointer = scene::get_pointer(ctx); pointer->focus.client == this) {
+        scene::pointer::set_focus(pointer, {});
     }
 
     std::erase(ctx->clients, this);
 }
 
-auto scene_client_create(scene_context* ctx) -> core::Ref<scene_client>
+auto scene::client::create(scene::Context* ctx) -> core::Ref<scene::Client>
 {
-    auto client = core::create<scene_client>();
+    auto client = core::create<scene::Client>();
     client->ctx = ctx;
     ctx->clients.emplace_back(client.get());
     return client;
 }
 
-void scene_client_set_event_handler(scene_client* client, std::move_only_function<scene_event_handler_fn>&& event_handler)
+void scene::client::set_event_handler(scene::Client* client, std::move_only_function<scene::EventHandlerFn>&& event_handler)
 {
     client->event_handler = std::move(event_handler);
 }
 
-void scene_client_post_event(scene_client* client, scene_event* event)
+void scene_client_post_event(scene::Client* client, scene::Event* event)
 {
     client->event_handler(event);
 }

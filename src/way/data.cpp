@@ -8,7 +8,7 @@ void create_data_source(wl_client* client, wl_resource* resource, u32 id)
     auto source = core::create<way_data_source>();
     source->client = way_client_from(server, client);
     source->resource = way_resource_create_refcounted(wl_data_source, client, resource, id, source.get());
-    source->source = scene_data_source_create(source->client->scene.get(), {
+    source->source = scene::data_source::create(source->client->scene.get(), {
         .cancel = [source = source.get()] {
             way_send(source->client->server, wl_data_source_send_cancelled, source->resource);
         },
@@ -45,7 +45,7 @@ void receive(wl_client* client, wl_resource* resource, const char* mime_type, in
     auto write = core::fd::adopt(fd);
 
     auto* offer = way_get_userdata<way_data_offer>(resource);
-    scene_data_source_send(offer->source.get(), mime_type, write.get());
+    scene::data_source::send(offer->source.get(), mime_type, write.get());
 }
 
 WAY_INTERFACE(wl_data_offer) = {
@@ -62,7 +62,7 @@ static
 void offer(wl_client* client, wl_resource* resource, const char* mime_type)
 {
     auto* source = way_get_userdata<way_data_source>(resource);
-    scene_data_source_offer(source->source.get(), mime_type);
+    scene::data_source::offer(source->source.get(), mime_type);
 }
 
 WAY_INTERFACE(wl_data_source) = {
@@ -94,7 +94,7 @@ static
 void set_selection(wl_client* wl_client, wl_resource* resource, wl_resource* wl_data_source, u32 serial)
 {
     auto* source = way_get_userdata<way_data_source>(wl_data_source);
-    scene_set_selection(source->client->server->scene, source->source.get());
+    scene::set_selection(source->client->server->scene, source->source.get());
 }
 
 WAY_INTERFACE(wl_data_device) = {
@@ -106,7 +106,7 @@ WAY_INTERFACE(wl_data_device) = {
 // -----------------------------------------------------------------------------
 
 static
-auto make_offer(way_client* client, wl_resource* wl_data_device, scene_data_source* source) -> core::Ref<way_data_offer>
+auto make_offer(way_client* client, wl_resource* wl_data_device, scene::DataSource* source) -> core::Ref<way_data_offer>
 {
     auto* server = client->server;
 
@@ -117,7 +117,7 @@ auto make_offer(way_client* client, wl_resource* wl_data_device, scene_data_sour
     offer->resource = way_resource_create_refcounted(wl_data_offer, client->wl_client, wl_data_device, 0, offer.get());
 
     way_send(server, wl_data_device_send_data_offer, wl_data_device, offer->resource);
-    for (auto& mime : scene_data_source_get_offered(offer->source.get())) {
+    for (auto& mime : scene::data_source::get_offered(offer->source.get())) {
         way_send(server, wl_data_offer_send_offer, offer->resource, mime.c_str());
     }
     way_send(server, wl_data_offer_send_source_actions, offer->resource, 0);
@@ -128,7 +128,7 @@ auto make_offer(way_client* client, wl_resource* wl_data_device, scene_data_sour
 void way_data_offer_selection(way_client* client)
 {
     auto* server = client->server;
-    auto* source = scene_get_selection(server->scene);
+    auto* source = scene::get_selection(server->scene);
 
     if (!source) return;
     if (!server->focus.keyboard || !server->focus.keyboard->client) return;

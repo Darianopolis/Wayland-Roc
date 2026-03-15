@@ -5,7 +5,7 @@
 #include "render.h"
 #include "scene_render_shader.hpp"
 
-void scene_render_init(scene_context* ctx)
+void scene_render_init(scene::Context* ctx)
 {
     ctx->render.vertex   = gpu::shader::create(ctx->gpu, {
         .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -31,10 +31,10 @@ void scene_render_init(scene_context* ctx)
     });
 }
 
-void scene_frame(scene_context* ctx, scene_output* output, io::Output* io_output, gpu::ImagePool* pool)
+void scene::frame(scene::Context* ctx, scene::Output* output, io::Output* io_output, gpu::ImagePool* pool)
 {
-    scene_broadcast_event(ctx, core::ptr_to(scene_event {
-        .type = scene_event_type::output_frame,
+    scene_broadcast_event(ctx, core::ptr_to(scene::Event {
+        .type = scene::EventType::output_frame,
         .redraw = { .output = output },
     }));
 
@@ -53,12 +53,12 @@ void scene_frame(scene_context* ctx, scene_output* output, io::Output* io_output
         }))
     });
 
-    auto done = scene_render(ctx, target.get(), output->viewport);
+    auto done = scene::render(ctx, target.get(), output->viewport);
 
     io_output->commit(target.get(), done, io::OutputCommitFlag::vsync);
 }
 
-auto scene_render(scene_context* ctx, gpu::Image* target, rect2f32 viewport) -> gpu::Syncpoint
+auto scene::render(scene::Context* ctx, gpu::Image* target, rect2f32 viewport) -> gpu::Syncpoint
 {
     auto& render = ctx->render;
 
@@ -104,12 +104,12 @@ auto scene_render(scene_context* ctx, gpu::Image* target, rect2f32 viewport) -> 
         return draw;
     };
 
-    auto visit_node = [&](scene_node* node) -> scene_iterate_action {
+    auto visit_node = [&](scene::Node* node) -> scene::IterateAction {
         switch (node->type) {
-            break;case scene_node_type::mesh: {
-                auto* mesh = static_cast<scene_mesh*>(node);
+            break;case scene::NodeType::mesh: {
+                auto* mesh = static_cast<scene::Mesh*>(node);
 
-                auto pos = scene_tree_get_position(node->parent);
+                auto pos = scene::tree::get_position(node->parent);
 
                 draws.emplace_back(scene_draw {
                     .first_vertex = u32(vertices.size()),
@@ -129,8 +129,8 @@ auto scene_render(scene_context* ctx, gpu::Image* target, rect2f32 viewport) -> 
                 vertices.insert_range(vertices.end(), mesh->vertices);
                 indices.insert_range(indices.end(), mesh->indices);
             }
-            break;case scene_node_type::texture: {
-                auto* texture = static_cast<scene_texture*>(node);
+            break;case scene::NodeType::texture: {
+                auto* texture = static_cast<scene::Texture*>(node);
                 aabb2f32 src = texture->src;
                 aabb2f32 dst = texture->dst;
 
@@ -151,7 +151,7 @@ auto scene_render(scene_context* ctx, gpu::Image* target, rect2f32 viewport) -> 
                     indices.emplace_back(base_vtx + idx);
                 }
 
-                auto translation = scene_tree_get_position(texture->parent);
+                auto translation = scene::tree::get_position(texture->parent);
                 auto push_vtx = [&](vec2f32 pos, vec2f32 uv = {}) {
                     vertices.emplace_back(scene_vertex {
                         .pos = translation + pos,
@@ -167,14 +167,14 @@ auto scene_render(scene_context* ctx, gpu::Image* target, rect2f32 viewport) -> 
             break;default:
                 ;
         }
-        return scene_iterate_action::next;
+        return scene::IterateAction::next;
     };
 
-    scene_iterate(ctx->root_tree.get(),
-        scene_iterate_direction::back_to_front,
-        scene_iterate_default,
+    scene::iterate(ctx->root_tree.get(),
+        scene::IterateDirection::back_to_front,
+        scene::iterate_default,
         visit_node,
-        scene_iterate_default);
+        scene::iterate_default);
 
     auto gpu = ctx->gpu;
 

@@ -7,7 +7,7 @@ way_server::~way_server()
     wl_display_destroy(wl_display);
 }
 
-auto way_create(core::EventLoop* event_loop, gpu::Context* gpu, scene_context* scene) -> core::Ref<way_server>
+auto way_create(core::EventLoop* event_loop, gpu::Context* gpu, scene::Context* scene) -> core::Ref<way_server>
 {
     auto server = core::create<way_server>();
 
@@ -16,7 +16,7 @@ auto way_create(core::EventLoop* event_loop, gpu::Context* gpu, scene_context* s
     server->event_loop = event_loop;
     server->gpu = gpu;
     server->scene = scene;
-    server->scene_system = scene_register_system(scene);
+    server->scene_system = scene::register_system(scene);
 
     way_seat_init(server.get());
 

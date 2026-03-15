@@ -41,8 +41,8 @@ struct way_server
     std::chrono::steady_clock::time_point epoch;
 
     gpu::Context* gpu;
-    scene_context*  scene;
-    scene_system_id scene_system;
+    scene::Context*  scene;
+    scene::SystemId scene_system;
 
     wl_display* wl_display;
     core::Fd wl_event_loop_fd;
@@ -56,12 +56,12 @@ struct way_server
     } client;
 
     struct {
-        scene_keyboard* scene;
+        scene::Keyboard* scene;
         way_keymap keymap;
     } keyboard;
 
     struct {
-        scene_pointer* scene;
+        scene::Pointer* scene;
     } pointer;
 
     struct {
@@ -88,16 +88,16 @@ void way_dmabuf_init(way_server*);
 
 void way_seat_init(way_server* server);
 
-void way_seat_on_keyboard_enter(way_client*, scene_event*);
-void way_seat_on_keyboard_leave(way_client*, scene_event*);
-void way_seat_on_key(           way_client*, scene_event*);
-void way_seat_on_modifier(      way_client*, scene_event*);
+void way_seat_on_keyboard_enter(way_client*, scene::Event*);
+void way_seat_on_keyboard_leave(way_client*, scene::Event*);
+void way_seat_on_key(           way_client*, scene::Event*);
+void way_seat_on_modifier(      way_client*, scene::Event*);
 
-void way_seat_on_pointer_enter(way_client*, scene_event*);
-void way_seat_on_pointer_leave(way_client*, scene_event*);
-void way_seat_on_motion(       way_client*, scene_event*);
-void way_seat_on_button(       way_client*, scene_event*);
-void way_seat_on_scroll(       way_client*, scene_event*);
+void way_seat_on_pointer_enter(way_client*, scene::Event*);
+void way_seat_on_pointer_leave(way_client*, scene::Event*);
+void way_seat_on_motion(       way_client*, scene::Event*);
+void way_seat_on_button(       way_client*, scene::Event*);
+void way_seat_on_scroll(       way_client*, scene::Event*);
 
 // -----------------------------------------------------------------------------
 
@@ -329,7 +329,7 @@ struct way_surface
         way_resource resource;
         rect2f32 anchor;
         vec2f32 gravity = {1, 1};
-        core::Ref<scene_window> window;
+        core::Ref<scene::Window> window;
 
         bool pending; // commit response to resize configure is pending
         bool queued;  // new reposition request received while pending
@@ -337,9 +337,9 @@ struct way_surface
 
     // scene
     struct {
-        core::Ref<scene_tree>         tree;
-        core::Ref<scene_texture>      texture;
-        core::Ref<scene_input_region> input_region;
+        core::Ref<scene::Tree>         tree;
+        core::Ref<scene::Texture>      texture;
+        core::Ref<scene::InputRegion> input_region;
     } scene;
 
     bool mapped;
@@ -389,7 +389,7 @@ struct way_data_source
 
     way_resource resource;
 
-    core::Ref<scene_data_source> source;
+    core::Ref<scene::DataSource> source;
 };
 
 struct way_data_offer
@@ -398,7 +398,7 @@ struct way_data_offer
 
     way_resource resource;
 
-    core::Ref<scene_data_source> source;
+    core::Ref<scene::DataSource> source;
 };
 
 void way_data_offer_selection(way_client*);
@@ -441,7 +441,7 @@ struct way_client
 
     wl_client* wl_client;
 
-    core::Ref<scene_client> scene;
+    core::Ref<scene::Client> scene;
 
     std::vector<way_surface*> surfaces;
 

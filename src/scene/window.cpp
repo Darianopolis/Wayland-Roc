@@ -2,23 +2,23 @@
 
 #include "core/math.hpp"
 
-scene_window::~scene_window()
+scene::Window::~Window()
 {
     tree->userdata = nullptr;
-    scene_window_unmap(this);
+    scene::window::unmap(this);
     std::erase(client->ctx->windows, this);
 }
 
-auto scene_window_create(scene_client* client) -> core::Ref<scene_window>
+auto scene::window::create(scene::Client* client) -> core::Ref<scene::Window>
 {
-    auto window = core::create<scene_window>();
+    auto window = core::create<scene::Window>();
     window->client = client;
 
     auto* ctx = client->ctx;
 
     ctx->windows.emplace_back(window.get());
 
-    window->tree = scene_tree_create(ctx);
+    window->tree = scene::tree::create(ctx);
 
     window->tree->system = client->ctx->window_system;
     window->tree->userdata = window.get();
@@ -26,20 +26,20 @@ auto scene_window_create(scene_client* client) -> core::Ref<scene_window>
     return window;
 }
 
-auto scene_window_get_tree(scene_window* window) -> scene_tree*
+auto scene::window::get_tree(scene::Window* window) -> scene::Tree*
 {
     return window->tree.get();
 }
 
-void scene_window_set_title(scene_window* window, std::string_view title)
+void scene::window::set_title(scene::Window* window, std::string_view title)
 {
     window->title = title;
 }
 
-void scene_window_request_reposition(scene_window* window, rect2f32 frame, vec2f32 gravity)
+void scene::window::request_reposition(scene::Window* window, rect2f32 frame, vec2f32 gravity)
 {
-    scene_client_post_event(window->client, core::ptr_to(scene_event {
-        .type = scene_event_type::window_reposition,
+    scene_client_post_event(window->client, core::ptr_to(scene::Event {
+        .type = scene::EventType::window_reposition,
         .window = {
             .window = window,
             .reposition = {
@@ -50,69 +50,69 @@ void scene_window_request_reposition(scene_window* window, rect2f32 frame, vec2f
     }));
 }
 
-void scene_window_set_frame(scene_window* window, rect2f32 frame)
+void scene::window::set_frame(scene::Window* window, rect2f32 frame)
 {
     window->extent = frame.extent;
-    scene_tree_set_translation(window->tree.get(), frame.origin);
+    scene::tree::set_translation(window->tree.get(), frame.origin);
 }
 
-auto scene_window_get_frame(scene_window* window) -> rect2f32
+auto scene::window::get_frame(scene::Window* window) -> rect2f32
 {
     return {
-        scene_tree_get_position(window->tree.get()),
+        scene::tree::get_position(window->tree.get()),
         window->extent,
         core::xywh
     };
 }
 
-void scene_window_map(scene_window* window)
+void scene::window::map(scene::Window* window)
 {
     if (window->mapped) return;
 
-    scene_tree_place_above(scene_get_layer(window->client->ctx, scene_layer::window), nullptr, window->tree.get());
+    scene::tree::place_above(scene::get_layer(window->client->ctx, scene::Layer::window), nullptr, window->tree.get());
 
     window->mapped = true;
 }
 
-void scene_window_raise(scene_window* window)
+void scene::window::raise(scene::Window* window)
 {
     if (!window->mapped) return;
 
-    scene_tree_place_above(scene_get_layer(window->client->ctx, scene_layer::window), nullptr, window->tree.get());
+    scene::tree::place_above(scene::get_layer(window->client->ctx, scene::Layer::window), nullptr, window->tree.get());
 }
 
-void scene_window_unmap(scene_window* window)
+void scene::window::unmap(scene::Window* window)
 {
     if (!window->mapped) return;
 
-    scene_node_unparent(window->tree.get());
+    scene::node::unparent(window->tree.get());
 
     window->mapped = false;
 }
 
 // -----------------------------------------------------------------------------
 
-auto scene_find_window_at(scene_context* ctx, vec2f32 point) -> scene_window*
+auto scene::find_window_at(scene::Context* ctx, vec2f32 point) -> scene::Window*
 {
     // TODO: This will ignore any `input_plane`s currently.
     //       Should we provide (optional) mappings from `input_plane` back to windows
     //       and then intersect against both `input_plane`s and `window` frames?
 
-    scene_window* window = nullptr;
+    scene::Window* window = nullptr;
 
-    scene_iterate(ctx->root_tree.get(),
-        scene_iterate_direction::front_to_back,
-        scene_iterate_default,
-        scene_iterate_default,
-        [&](scene_tree* tree) {
+    scene::iterate(ctx->root_tree.get(),
+        scene::IterateDirection::front_to_back,
+        scene::iterate_default,
+        scene::iterate_default,
+        [&](scene::Tree* tree) {
             if (tree->system == ctx->window_system) {
-                auto w = static_cast<scene_window*>(tree->userdata);
-                if (core::rect::contains(scene_window_get_frame(w), point)) {
+                auto w = static_cast<scene::Window*>(tree->userdata);
+                if (core::rect::contains(scene::window::get_frame(w), point)) {
                     window = w;
-                    return scene_iterate_action::stop;
+                    return scene::IterateAction::stop;
                 }
             }
-            return scene_iterate_action::next;
+            return scene::IterateAction::next;
         });
 
     return window;

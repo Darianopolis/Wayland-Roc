@@ -94,19 +94,19 @@ void way_subsurface_apply(way_surface* surface, way_surface_state& from)
     // Arrange child subsurfaces
 
     for (auto& move : from.subsurface.moves) {
-        scene_tree_set_translation(move.subsurface->scene.tree.get(), move.position);
+        scene::tree::set_translation(move.subsurface->scene.tree.get(), move.position);
     }
     from.subsurface.moves.clear();
 
     for (auto& place : from.subsurface.places) {
         auto* reference = place.reference ? place.reference->scene.tree.get() : nullptr;
         if (place.above) {
-            scene_tree_place_above(
+            scene::tree::place_above(
                 surface->scene.tree.get(),
                 reference,
                 place.subsurface->scene.tree.get());
         } else {
-            scene_tree_place_below(
+            scene::tree::place_below(
                 surface->scene.tree.get(),
                 reference,
                 place.subsurface->scene.tree.get());

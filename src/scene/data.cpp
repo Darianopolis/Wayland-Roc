@@ -1,63 +1,63 @@
 #include "internal.hpp"
 
-auto scene_data_source_create(scene_client* client, scene_data_source_ops&& ops) -> core::Ref<scene_data_source>
+auto scene::data_source::create(scene::Client* client, scene::DataSourceOps&& ops) -> core::Ref<scene::DataSource>
 {
-    auto source = core::create<scene_data_source>();
+    auto source = core::create<scene::DataSource>();
     source->ops = std::move(ops);
     source->client = client;
     return source;
 }
 
-void scene_data_source_offer(scene_data_source* source, const char* mime_type)
+void scene::data_source::offer(scene::DataSource* source, const char* mime_type)
 {
     source->offered.insert(mime_type);
 }
 
 static
-void offer_selection(scene_context* ctx, scene_data_source* source)
+void offer_selection(scene::Context* ctx, scene::DataSource* source)
 {
     for (auto* client : ctx->clients) {
-        scene_offer_selection(client, source);
+        scene::offer_selection(client, source);
     }
 }
 
-void scene_set_selection(scene_context* ctx, scene_data_source* source)
+void scene::set_selection(scene::Context* ctx, scene::DataSource* source)
 {
     if (ctx->selection) {
         ctx->selection->ops.cancel();
     }
     ctx->selection = source;
-    offer_selection(ctx, source);
+    ::offer_selection(ctx, source);
 }
 
-auto scene_get_selection(scene_context* ctx) -> scene_data_source*
+auto scene::get_selection(scene::Context* ctx) -> scene::DataSource*
 {
     return ctx->selection.get();
 }
 
-scene_data_source::~scene_data_source()
+scene::DataSource::~DataSource()
 {
 }
 
-void scene_offer_selection(scene_client* client, scene_data_source* source)
+void scene::offer_selection(scene::Client* client, scene::DataSource* source)
 {
-    scene_client_post_event(client, core::ptr_to(scene_event {
-        .type = scene_event_type::selection,
+    scene_client_post_event(client, core::ptr_to(scene::Event {
+        .type = scene::EventType::selection,
         .data {
             .source =source,
         },
     }));
 }
 
-auto scene_data_source_get_offered(scene_data_source* source) -> std::span<const std::string>
+auto scene::data_source::get_offered(scene::DataSource* source) -> std::span<const std::string>
 {
     return source->offered;
 }
 
 // -----------------------------------------------------------------------------
 
-void scene_data_source_send(scene_data_source* source, const char* mime_type, int fd)
+void scene::data_source::send(scene::DataSource* source, const char* mime_type, int fd)
 {
-    log_debug("scene_data_source_send({}, {}, {})", (void*)source, mime_type, fd);
+    log_debug("scene::data_source::send({}, {}, {})", (void*)source, mime_type, fd);
     source->ops.send(mime_type, fd);
 }

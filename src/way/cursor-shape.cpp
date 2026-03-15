@@ -70,7 +70,7 @@ void set_shape(wl_client* client, wl_resource* resource, u32 serial, u32 shape)
 {
     auto* server = way_get_userdata<way_server>(resource);
     if (server->pointer.scene) {
-        scene_pointer_set_xcursor(server->pointer.scene, cursor_shape_to_xcursor(wp_cursor_shape_device_v1_shape(shape)));
+        scene::pointer::set_xcursor(server->pointer.scene, cursor_shape_to_xcursor(wp_cursor_shape_device_v1_shape(shape)));
     }
 }
 

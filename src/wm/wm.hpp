@@ -11,15 +11,15 @@ enum class wm_movesize_mode
 
 struct wm_context
 {
-    scene_context* scene;
+    scene::Context* scene;
 
-    scene_modifier main_mod;
+    scene::Modifier main_mod;
 
     struct {
-        scene_pointer* pointer;
+        scene::Pointer* pointer;
 
-        core::Ref<scene_client> client;
-        core::Weak<scene_window> window;
+        core::Ref<scene::Client> client;
+        core::Weak<scene::Window> window;
 
         vec2f32  grab;
         rect2f32 frame;
@@ -29,6 +29,6 @@ struct wm_context
     } movesize;
 };
 
-auto wm_create(scene_context*) -> core::Ref<wm_context>;
+auto wm_create(scene::Context*) -> core::Ref<wm_context>;
 
 void wm_init_movesize(wm_context*);

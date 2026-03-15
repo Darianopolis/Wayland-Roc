@@ -9,61 +9,61 @@
 #endif
 
 static
-void request_frame(scene_context* ctx)
+void request_frame(scene::Context* ctx)
 {
     for (auto* output : ctx->outputs) {
-        scene_output_request_frame(output);
+        scene::output::request_frame(output);
     }
 }
 
 static
-void damage_node(scene_node* node)
+void damage_node(scene::Node* node)
 {
     switch (node->type) {
-        break;case scene_node_type::tree:
-            for (auto* child : static_cast<scene_tree*>(node)->children) {
+        break;case scene::NodeType::tree:
+            for (auto* child : static_cast<scene::Tree*>(node)->children) {
                 damage_node(child);
             }
-        break;case scene_node_type::texture:
-              case scene_node_type::mesh:
+        break;case scene::NodeType::texture:
+              case scene::NodeType::mesh:
             if (node->parent) {
-                request_frame(node->parent->ctx);
+                ::request_frame(node->parent->ctx);
                 // TODO: Damage affected regions only.
                 //       Since currently we're just forcing a global redraw,
                 //       we can immediately return after a frame has been requested.
                 return;
             }
-        break;case scene_node_type::input_region:
+        break;case scene::NodeType::input_region:
             ;
     }
 }
 
 // -----------------------------------------------------------------------------
 
-scene_node::~scene_node()
+scene::Node::~Node()
 {
     core_assert(!parent);
 }
 
 // -----------------------------------------------------------------------------
 
-scene_tree::~scene_tree()
+scene::Tree::~Tree()
 {
     for (auto& child : children) {
         child->parent = nullptr;
     }
 }
 
-auto scene_tree_create(scene_context* ctx) -> core::Ref<scene_tree>
+auto scene::tree::create(scene::Context* ctx) -> core::Ref<scene::Tree>
 {
-    auto tree = core::create<scene_tree>();
-    tree->type = scene_node_type::tree;
+    auto tree = core::create<scene::Tree>();
+    tree->type = scene::NodeType::tree;
     tree->ctx = ctx;
     tree->enabled = true;
     return tree;
 }
 
-void scene_tree_set_enabled(scene_tree* tree, bool enabled)
+void scene::tree::set_enabled(scene::Tree* tree, bool enabled)
 {
     if (tree->enabled == enabled) return;
 
@@ -78,7 +78,7 @@ void scene_tree_set_enabled(scene_tree* tree, bool enabled)
     }
 }
 
-void scene_node_unparent(scene_node* node)
+void scene::node::unparent(scene::Node* node)
 {
     if (!node->parent) return;
 
@@ -90,17 +90,17 @@ void scene_node_unparent(scene_node* node)
 }
 
 static
-void reparent_unsafe(scene_node* node, scene_tree* tree)
+void reparent_unsafe(scene::Node* node, scene::Tree* tree)
 {
     if (node->parent == tree) return;
     if (node->parent) {
-        scene_node_unparent(node);
+        scene::node::unparent(node);
     }
     node->parent = tree;
 }
 
 static
-void tree_place(scene_tree* tree, scene_node* reference, scene_node* node, bool above)
+void tree_place(scene::Tree* tree, scene::Node* reference, scene::Node* node, bool above)
 {
     auto end = tree->children.end();
     auto cur =             std::ranges::find(tree->children, node);
@@ -128,20 +128,20 @@ void tree_place(scene_tree* tree, scene_node* reference, scene_node* node, bool 
     damage_node(tree);
 }
 
-void scene_tree_place_below(scene_tree* tree, scene_node* reference, scene_node* to_place)
+void scene::tree::place_below(scene::Tree* tree, scene::Node* reference, scene::Node* to_place)
 {
     tree_place(tree, reference, to_place, false);
     reparent_unsafe(to_place, tree);
 
 }
 
-void scene_tree_place_above(scene_tree* tree, scene_node* reference, scene_node* to_place)
+void scene::tree::place_above(scene::Tree* tree, scene::Node* reference, scene::Node* to_place)
 {
     tree_place(tree, reference, to_place, true);
     reparent_unsafe(to_place, tree);
 }
 
-void scene_tree_set_translation(scene_tree* tree, vec2f32 position)
+void scene::tree::set_translation(scene::Tree* tree, vec2f32 position)
 {
     if (tree->translation == position) return;
 
@@ -154,17 +154,17 @@ void scene_tree_set_translation(scene_tree* tree, vec2f32 position)
 
 // -----------------------------------------------------------------------------
 
-auto scene_texture_create(scene_context*) -> core::Ref<scene_texture>
+auto scene::texture::create(scene::Context*) -> core::Ref<scene::Texture>
 {
-    auto texture = core::create<scene_texture>();
+    auto texture = core::create<scene::Texture>();
     texture->blend = gpu::BlendMode::postmultiplied;
-    texture->type = scene_node_type::texture;
+    texture->type = scene::NodeType::texture;
     texture->tint = {255, 255, 255, 255};
     texture->src = {{}, {1, 1}, core::minmax};
     return texture;
 }
 
-void scene_texture_set_image(scene_texture* texture, gpu::Image* image, gpu::Sampler* sampler, gpu::BlendMode blend)
+void scene::texture::set_image(scene::Texture* texture, gpu::Image* image, gpu::Sampler* sampler, gpu::BlendMode blend)
 {
     if (   texture->image.get()   == image
         && texture->sampler.get() == sampler
@@ -182,7 +182,7 @@ void scene_texture_set_image(scene_texture* texture, gpu::Image* image, gpu::Sam
     damage_node(texture);
 }
 
-void scene_texture_set_tint(scene_texture* texture, vec4u8 tint)
+void scene::texture::set_tint(scene::Texture* texture, vec4u8 tint)
 {
     if (texture->tint == tint) return;
 
@@ -192,7 +192,7 @@ void scene_texture_set_tint(scene_texture* texture, vec4u8 tint)
     damage_node(texture);
 }
 
-void scene_texture_set_src(scene_texture* texture, aabb2f32 source)
+void scene::texture::set_src(scene::Texture* texture, aabb2f32 source)
 {
     if (source == texture->src) return;
 
@@ -202,7 +202,7 @@ void scene_texture_set_src(scene_texture* texture, aabb2f32 source)
     damage_node(texture);
 }
 
-void scene_texture_set_dst(scene_texture* texture, rect2f32 extent)
+void scene::texture::set_dst(scene::Texture* texture, rect2f32 extent)
 {
     if (extent == texture->dst) return;
 
@@ -213,7 +213,7 @@ void scene_texture_set_dst(scene_texture* texture, rect2f32 extent)
     damage_node(texture);
 }
 
-void scene_texture_damage(scene_texture* texture, aabb2i32 damage)
+void scene::texture::damage(scene::Texture* texture, aabb2i32 damage)
 {
     NODE_LOG("scene.texture{{{}}}.damage{}", (void*)texture, core::to_string(rect2i32(damage)));
 
@@ -222,14 +222,14 @@ void scene_texture_damage(scene_texture* texture, aabb2i32 damage)
 
 // -----------------------------------------------------------------------------
 
-auto scene_mesh_create(scene_context* ctx) -> core::Ref<scene_mesh>
+auto scene::mesh::create(scene::Context* ctx) -> core::Ref<scene::Mesh>
 {
-    auto mesh = core::create<scene_mesh>();
-    mesh->type = scene_node_type::mesh;
+    auto mesh = core::create<scene::Mesh>();
+    mesh->type = scene::NodeType::mesh;
     return mesh;
 }
 
-void scene_mesh_update(scene_mesh* mesh, gpu::Image* image, gpu::Sampler* sampler, gpu::BlendMode blend, aabb2f32 clip, std::span<const scene_vertex> vertices, std::span<const u16> indices)
+void scene::mesh::update(scene::Mesh* mesh, gpu::Image* image, gpu::Sampler* sampler, gpu::BlendMode blend, aabb2f32 clip, std::span<const scene_vertex> vertices, std::span<const u16> indices)
 {
 #if SCENE_NOISY_NODES
     if (mesh->image.get()   != image)   NODE_LOG("scene.mesh{{{}}}.set_image({})",   (void*)mesh, (void*)image);
@@ -253,27 +253,27 @@ void scene_mesh_update(scene_mesh* mesh, gpu::Image* image, gpu::Sampler* sample
 
 // -----------------------------------------------------------------------------
 
-scene_input_region::~scene_input_region()
+scene::InputRegion::~InputRegion()
 {
     client->input_regions--;
 
     if (parent) {
-        scene_node_unparent(this);
+        scene::node::unparent(this);
     }
 
-    scene_update_pointer_focus(client->ctx);
+    scene::update_pointer_focus(client->ctx);
 }
 
-auto scene_input_region_create(scene_client* client) -> core::Ref<scene_input_region>
+auto scene::input_region::create(scene::Client* client) -> core::Ref<scene::InputRegion>
 {
-    auto region = core::create<scene_input_region>();
-    region->type = scene_node_type::input_region;
+    auto region = core::create<scene::InputRegion>();
+    region->type = scene::NodeType::input_region;
     region->client = client;
     client->input_regions++;
     return region;
 }
 
-void scene_input_region_set_region(scene_input_region* input_region, region2f32 region)
+void scene::input_region::set_region(scene::InputRegion* input_region, region2f32 region)
 {
     if (input_region->region == region) return;
 

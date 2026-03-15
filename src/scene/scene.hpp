@@ -8,14 +8,17 @@
 
 // -----------------------------------------------------------------------------
 
-struct scene_output;
-struct scene_node;
-struct scene_tree;
-struct scene_texture;
-struct scene_input_region;
-struct scene_window;
+namespace scene
+{
+    struct Output;
+    struct Node;
+    struct Tree;
+    struct Texture;
+    struct InputRegion;
+    struct Window;
 
-struct scene_context;
+    struct Context;
+}
 
 namespace io
 {
@@ -24,460 +27,568 @@ namespace io
     struct Output;
 }
 
-auto scene_create(gpu::Context*, io::Context*) -> core::Ref<scene_context>;
-
-enum class scene_layer
+namespace scene
 {
-    background,
-    window,
-    overlay,
-};
+    auto create(gpu::Context*, io::Context*) -> core::Ref<scene::Context>;
 
-auto scene_get_layer(scene_context*, scene_layer) -> scene_tree*;
+    enum class Layer
+    {
+        background,
+        window,
+        overlay,
+    };
 
-// TODO: Requests should be handled per-output
-void scene_request_frame(scene_context*);
+    auto get_layer(scene::Context*, scene::Layer) -> scene::Tree*;
 
-// -----------------------------------------------------------------------------
-
-void scene_push_io_event(scene_context* ctx, io::Event*);
-
-// -----------------------------------------------------------------------------
-
-auto scene_render(scene_context* ctx, gpu::Image* target, rect2f32 viewport) -> gpu::Syncpoint;
-
-// -----------------------------------------------------------------------------
-
-enum class scene_system_id : u32 {};
-auto scene_register_system(scene_context*) -> scene_system_id;
-
-// -----------------------------------------------------------------------------
-
-struct scene_client;
-
-auto scene_client_create(scene_context*) -> core::Ref<scene_client>;
-
-// -----------------------------------------------------------------------------
-
-auto scene_output_create(scene_client*) -> core::Ref<scene_output>;
-void scene_output_set_viewport(scene_output*, rect2f32 viewport);
-
-auto scene_list_outputs(scene_context*) -> std::span<scene_output* const>;
-auto scene_output_get_viewport(scene_output*) -> rect2f32;
-
-struct scene_find_output_result
-{
-    scene_output* output;
-    vec2f32       position;
-};
-auto scene_find_output_for_point(scene_context*, vec2f32 point) -> scene_find_output_result;
-
-void scene_frame(scene_context* ctx, scene_output*, io::Output* output, gpu::ImagePool* pool);
-
-// -----------------------------------------------------------------------------
-
-enum class scene_modifier : u32
-{
-    super = 1 << 0,
-    shift = 1 << 1,
-    ctrl  = 1 << 2,
-    alt   = 1 << 3,
-    num   = 1 << 4,
-    caps  = 1 << 5,
-};
-
-enum class scene_modifier_flags
-{
-    ignore_locked = 1 << 0
-};
-
-using scene_scancode = u32;
-
-auto scene_get_modifiers(scene_context*, core::Flags<scene_modifier_flags> = {}) -> core::Flags<scene_modifier>;
-
-enum class scene_input_device_type
-{
-    invalid,
-    keyboard,
-    pointer,
-};
-
-struct scene_input_device;
-struct scene_keyboard;
-struct scene_pointer;
-
-auto scene_input_device_get_type(    scene_input_device*) -> scene_input_device_type;
-auto scene_input_device_get_pointer( scene_input_device*) -> scene_pointer*;
-auto scene_input_device_get_keyboard(scene_input_device*) -> scene_keyboard*;
-
-auto scene_get_pointer( scene_context*) -> scene_pointer*;
-auto scene_get_keyboard(scene_context*) -> scene_keyboard*;
-
-void scene_pointer_focus(       scene_pointer*, scene_client*, scene_input_region* = nullptr);
-auto scene_pointer_get_position(scene_pointer*) -> vec2f32;
-auto scene_pointer_get_pressed( scene_pointer*) -> std::span<const scene_scancode>;
-
-void scene_pointer_set_cursor( scene_pointer*, scene_node*);
-void scene_pointer_set_xcursor(scene_pointer*, const char* xcursor_semantic);
-
-struct scene_keyboard_info
-{
-    xkb_context* context;
-    xkb_state*   state;
-    xkb_keymap*  keymap;
-    i32          rate;
-    i32          delay;
-};
-
-void scene_keyboard_clear_focus(  scene_keyboard*);
-auto scene_keyboard_get_modifiers(scene_keyboard*, core::Flags<scene_modifier_flags> = {}) -> core::Flags<scene_modifier>;
-auto scene_keyboard_get_pressed(  scene_keyboard*) -> std::span<const scene_scancode>;
-auto scene_keyboard_get_sym(      scene_keyboard*, scene_scancode) -> xkb_keysym_t;
-auto scene_keyboard_get_utf8(     scene_keyboard*, scene_scancode) -> std::string;
-auto scene_keyboard_get_info(     scene_keyboard*) -> const scene_keyboard_info&;
-
-// -----------------------------------------------------------------------------
-
-struct scene_pointer_driver_in
-{
-    vec2f32 position;
-    vec2f32 delta;
-};
-
-struct scene_pointer_driver_out
-{
-    vec2f32 position;
-    vec2f32 accel;
-    vec2f32 unaccel;
-};
-
-using scene_pointer_driver_fn = auto(scene_pointer_driver_in) -> scene_pointer_driver_out;
-
-void scene_pointer_set_driver(scene_pointer*, std::move_only_function<scene_pointer_driver_fn>&&);
-
-// -----------------------------------------------------------------------------
-
-struct scene_data_source;
-
-struct scene_data_source_ops
-{
-    std::move_only_function<void()>                 cancel = [] {};
-    std::move_only_function<void(const char*, int)> send;
-};
-
-auto scene_data_source_create(scene_client*, scene_data_source_ops&&) -> core::Ref<scene_data_source>;
-
-void scene_data_source_offer(      scene_data_source*, const char* mime_type);
-auto scene_data_source_get_offered(scene_data_source*) -> std::span<const std::string>;
-
-void scene_data_source_send(scene_data_source*, const char* mime_type, int fd);
-
-void scene_set_selection(scene_context*, scene_data_source*);
-auto scene_get_selection(scene_context*) -> scene_data_source*;
-
-// -----------------------------------------------------------------------------
-
-enum class scene_node_type
-{
-    tree,
-    texture,
-    mesh,
-    input_region,
-};
-
-struct scene_node
-{
-    scene_node_type type;
-
-    scene_tree* parent;
-
-    ~scene_node();
-};
-
-void scene_node_unparent(scene_node*);
-
-struct scene_tree : scene_node
-{
-    scene_context* ctx;
-
-    vec2f32 translation;
-
-    bool enabled;
-
-    scene_system_id system;
-    void*           userdata;
-
-    core::RefVector<scene_node> children;
-
-    ~scene_tree();
-};
-
-auto scene_tree_create(scene_context*) -> core::Ref<scene_tree>;
-
-void scene_tree_set_enabled(scene_tree*, bool enabled);
-void scene_tree_place_below(scene_tree*, scene_node* reference, scene_node* to_place);
-void scene_tree_place_above(scene_tree*, scene_node* reference, scene_node* to_place);
-
-void scene_tree_set_translation(scene_tree*, vec2f32 translation);
-
-inline
-auto scene_tree_get_position(scene_tree* tree) -> vec2f32
-{
-    return tree->translation + (tree->parent ? scene_tree_get_position(tree->parent) : vec2f32{});
+    // TODO: Requests should be handled per-output
+    void request_frame(scene::Context*);
 }
 
-struct scene_texture : scene_node
+// -----------------------------------------------------------------------------
+
+namespace scene
 {
-    core::Ref<gpu::Image>   image;
-    core::Ref<gpu::Sampler> sampler;
-    gpu::BlendMode   blend;
-
-    vec4u8   tint;
-    aabb2f32 src;
-    rect2f32 dst;
-};
-
-auto scene_texture_create(scene_context*) -> core::Ref<scene_texture>;
-void scene_texture_set_image(scene_texture*, gpu::Image*, gpu::Sampler*, gpu::BlendMode);
-void scene_texture_set_tint( scene_texture*, vec4u8   tint);
-void scene_texture_set_src(  scene_texture*, aabb2f32 src);
-void scene_texture_set_dst(  scene_texture*, rect2f32 dst);
-void scene_texture_damage(   scene_texture*, aabb2i32 damage);
-
-struct scene_mesh : scene_node
-{
-    core::Ref<gpu::Image>   image;
-    core::Ref<gpu::Sampler> sampler;
-    gpu::BlendMode   blend;
-
-    aabb2f32 clip;
-
-    std::vector<scene_vertex> vertices;
-    std::vector<u16>          indices;
-};
-
-auto scene_mesh_create(scene_context*) -> core::Ref<scene_mesh>;
-void scene_mesh_update(scene_mesh*, gpu::Image*, gpu::Sampler*, gpu::BlendMode, aabb2f32 clip, std::span<const scene_vertex> vertices, std::span<const u16> indices);
-
-struct scene_input_region : scene_node
-{
-    scene_client* client;
-
-    region2f32 region;
-
-    ~scene_input_region();
-};
-
-auto scene_input_region_create(scene_client*) -> core::Ref<scene_input_region>;
-void scene_input_region_set_region(scene_input_region*, region2f32);
+    void push_io_event(scene::Context* ctx, io::Event*);
+}
 
 // -----------------------------------------------------------------------------
 
-// Represents a normal interactable "toplevel" window.
-struct scene_window;
-
-auto scene_window_create(scene_client*) -> core::Ref<scene_window>;
-
-void scene_window_set_title(scene_window*, std::string_view title);
-
-void scene_window_map(  scene_window*);
-void scene_window_unmap(scene_window*);
-void scene_window_raise(scene_window*);
-
-auto scene_window_get_tree(scene_window*) -> scene_tree*;
-
-void scene_window_request_reposition(scene_window*, rect2f32 frame, vec2f32 gravity);
-void scene_window_set_frame(scene_window*, rect2f32 frame);
-auto scene_window_get_frame(scene_window*) -> rect2f32;
-
-auto scene_find_window_at(scene_context*, vec2f32 point) -> scene_window*;
+namespace scene
+{
+    auto render(scene::Context* ctx, gpu::Image* target, rect2f32 viewport) -> gpu::Syncpoint;
+}
 
 // -----------------------------------------------------------------------------
 
-enum class scene_iterate_action
+namespace scene
 {
-    next, // Continue to next iteration action.
-    skip, // Skip children.
-    stop, // Stop iteration. If called in pre-visit, post-visit will be skipped.
-};
+    enum class SystemId : u32 {};
+    auto register_system(scene::Context*) -> scene::SystemId;
+}
 
-static constexpr auto scene_iterate_default = [](auto*) -> scene_iterate_action { return scene_iterate_action::next; };
+// -----------------------------------------------------------------------------
 
-enum class scene_iterate_direction
+namespace scene
 {
-    front_to_back,
-    back_to_front,
-};
+    struct Client;
 
-template<typename Pre, typename Leaf, typename Post>
-auto scene_iterate(scene_tree* tree, scene_iterate_direction dir, Pre&& pre, Leaf&& leaf, Post&& post) -> scene_iterate_action
+    namespace client
+    {
+        auto create(scene::Context*) -> core::Ref<scene::Client>;
+    }
+}
+
+// -----------------------------------------------------------------------------
+
+namespace scene::output
 {
-    if (!tree->enabled) return scene_iterate_action::next;
+    auto create(scene::Client*) -> core::Ref<scene::Output>;
+    void set_viewport(scene::Output*, rect2f32 viewport);
+    auto get_viewport(scene::Output*) -> rect2f32;
+}
 
-    auto pre_action = pre(tree);
-    if (pre_action == scene_iterate_action::stop) return scene_iterate_action::stop;
-    if (pre_action == scene_iterate_action::skip) return scene_iterate_action::next;
+namespace scene
+{
+    auto list_outputs(scene::Context*) -> std::span<scene::Output* const>;
 
-    auto for_each = [&](auto&& children) -> scene_iterate_action {
-        for (auto* child : children) {
-            if (child->type == scene_node_type::tree) {
-                if (scene_iterate(static_cast<scene_tree*>(child), dir,
-                        std::forward<Pre>(pre), std::forward<Leaf>(leaf), std::forward<Post>(post))
-                            == scene_iterate_action::stop) {
-                    return scene_iterate_action::stop;
-                }
-            } else {
-                if (leaf(child) == scene_iterate_action::stop) return scene_iterate_action::stop;
-            }
+    struct FindOutputResult
+    {
+        scene::Output* output;
+        vec2f32       position;
+    };
+    auto find_output_for_point(scene::Context*, vec2f32 point) -> scene::FindOutputResult;
+
+    void frame(scene::Context* ctx, scene::Output*, io::Output* output, gpu::ImagePool* pool);
+}
+
+// -----------------------------------------------------------------------------
+
+namespace scene
+{
+    enum class Modifier : u32
+    {
+        super = 1 << 0,
+        shift = 1 << 1,
+        ctrl  = 1 << 2,
+        alt   = 1 << 3,
+        num   = 1 << 4,
+        caps  = 1 << 5,
+    };
+
+    enum class ModifierFlags
+    {
+        ignore_locked = 1 << 0
+    };
+
+    using Scancode = u32;
+
+    auto get_modifiers(scene::Context*, core::Flags<scene::ModifierFlags> = {}) -> core::Flags<scene::Modifier>;
+}
+
+namespace scene
+{
+    enum class InputDeviceType
+    {
+        invalid,
+        keyboard,
+        pointer,
+    };
+
+    struct InputDevice;
+    struct Keyboard;
+    struct Pointer;
+}
+
+namespace scene::input_device
+{
+    auto get_type(    scene::InputDevice*) -> scene::InputDeviceType;
+    auto get_pointer( scene::InputDevice*) -> scene::Pointer*;
+    auto get_keyboard(scene::InputDevice*) -> scene::Keyboard*;
+}
+
+namespace scene
+{
+    auto get_pointer( scene::Context*) -> scene::Pointer*;
+    auto get_keyboard(scene::Context*) -> scene::Keyboard*;
+}
+
+namespace scene::pointer
+{
+    void focus(       scene::Pointer*, scene::Client*, scene::InputRegion* = nullptr);
+    auto get_position(scene::Pointer*) -> vec2f32;
+    auto get_pressed( scene::Pointer*) -> std::span<const scene::Scancode>;
+
+    void set_cursor( scene::Pointer*, scene::Node*);
+    void set_xcursor(scene::Pointer*, const char* xcursor_semantic);
+}
+
+namespace scene
+{
+    struct KeyboardInfo
+    {
+        xkb_context* context;
+        xkb_state*   state;
+        xkb_keymap*  keymap;
+        i32          rate;
+        i32          delay;
+    };
+}
+
+namespace scene::keyboard
+{
+    void clear_focus(  scene::Keyboard*);
+    auto get_modifiers(scene::Keyboard*, core::Flags<scene::ModifierFlags> = {}) -> core::Flags<scene::Modifier>;
+    auto get_pressed(  scene::Keyboard*) -> std::span<const scene::Scancode>;
+    auto get_sym(      scene::Keyboard*, scene::Scancode) -> xkb_keysym_t;
+    auto get_utf8(     scene::Keyboard*, scene::Scancode) -> std::string;
+    auto get_info(     scene::Keyboard*) -> const scene::KeyboardInfo&;
+}
+
+// -----------------------------------------------------------------------------
+
+namespace scene
+{
+    struct PointerDriverIn
+    {
+        vec2f32 position;
+        vec2f32 delta;
+    };
+
+    struct PointerDriverOut
+    {
+        vec2f32 position;
+        vec2f32 accel;
+        vec2f32 unaccel;
+    };
+
+    using PointerDriverFn = auto(scene::PointerDriverIn) -> scene::PointerDriverOut;
+
+    namespace pointer
+    {
+        void set_driver(scene::Pointer*, std::move_only_function<scene::PointerDriverFn>&&);
+    }
+}
+
+// -----------------------------------------------------------------------------
+
+namespace scene
+{
+    struct DataSource;
+
+    struct DataSourceOps
+    {
+        std::move_only_function<void()>                 cancel = [] {};
+        std::move_only_function<void(const char*, int)> send;
+    };
+
+    namespace data_source
+    {
+        auto create(scene::Client*, scene::DataSourceOps&&) -> core::Ref<scene::DataSource>;
+
+        void offer(      scene::DataSource*, const char* mime_type);
+        auto get_offered(scene::DataSource*) -> std::span<const std::string>;
+
+        void send(scene::DataSource*, const char* mime_type, int fd);
+    }
+
+    void set_selection(scene::Context*, scene::DataSource*);
+    auto get_selection(scene::Context*) -> scene::DataSource*;
+}
+
+// -----------------------------------------------------------------------------
+
+namespace scene
+{
+    enum class NodeType
+    {
+        tree,
+        texture,
+        mesh,
+        input_region,
+    };
+
+    struct Node
+    {
+        scene::NodeType type;
+
+        scene::Tree* parent;
+
+        ~Node();
+    };
+
+    namespace node
+    {
+        void unparent(scene::Node*);
+    }
+}
+
+namespace scene
+{
+    struct Tree : scene::Node
+    {
+        scene::Context* ctx;
+
+        vec2f32 translation;
+
+        bool enabled;
+
+        scene::SystemId system;
+        void*           userdata;
+
+        core::RefVector<scene::Node> children;
+
+        ~Tree();
+    };
+
+    namespace tree
+    {
+        auto create(scene::Context*) -> core::Ref<scene::Tree>;
+
+        void set_enabled(scene::Tree*, bool enabled);
+        void place_below(scene::Tree*, scene::Node* reference, scene::Node* to_place);
+        void place_above(scene::Tree*, scene::Node* reference, scene::Node* to_place);
+
+        void set_translation(scene::Tree*, vec2f32 translation);
+
+        inline
+        auto get_position(scene::Tree* tree) -> vec2f32
+        {
+            return tree->translation + (tree->parent ? scene::tree::get_position(tree->parent) : vec2f32{});
         }
-        return scene_iterate_action::next;
+    }
+}
+
+namespace scene
+{
+    struct Texture : scene::Node
+    {
+        core::Ref<gpu::Image>   image;
+        core::Ref<gpu::Sampler> sampler;
+        gpu::BlendMode   blend;
+
+        vec4u8   tint;
+        aabb2f32 src;
+        rect2f32 dst;
     };
 
-    auto action = dir == scene_iterate_direction::front_to_back
-        ? for_each(tree->children | std::views::reverse)
-        : for_each(tree->children);
-    if (action == scene_iterate_action::stop) return action;
+    namespace texture
+    {
+        auto create(scene::Context*) -> core::Ref<scene::Texture>;
+        void set_image(scene::Texture*, gpu::Image*, gpu::Sampler*, gpu::BlendMode);
+        void set_tint( scene::Texture*, vec4u8   tint);
+        void set_src(  scene::Texture*, aabb2f32 src);
+        void set_dst(  scene::Texture*, rect2f32 dst);
+        void damage(   scene::Texture*, aabb2i32 damage);
+    }
+}
 
-    return post(tree);
+namespace scene
+{
+    struct Mesh : scene::Node
+    {
+        core::Ref<gpu::Image>   image;
+        core::Ref<gpu::Sampler> sampler;
+        gpu::BlendMode   blend;
+
+        aabb2f32 clip;
+
+        std::vector<scene_vertex> vertices;
+        std::vector<u16>          indices;
+    };
+
+    namespace mesh
+    {
+        auto create(scene::Context*) -> core::Ref<scene::Mesh>;
+        void update(scene::Mesh*, gpu::Image*, gpu::Sampler*, gpu::BlendMode, aabb2f32 clip, std::span<const scene_vertex> vertices, std::span<const u16> indices);
+    }
+}
+
+namespace scene
+{
+    struct InputRegion : scene::Node
+    {
+        scene::Client* client;
+
+        region2f32 region;
+
+        ~InputRegion();
+    };
+
+    namespace input_region
+    {
+        auto create(scene::Client*) -> core::Ref<scene::InputRegion>;
+        void set_region(scene::InputRegion*, region2f32);
+    }
 }
 
 // -----------------------------------------------------------------------------
 
-struct scene_hotkey
+namespace scene
 {
-    core::Flags<scene_modifier> mod;
-    scene_scancode        code;
+    // Represents a normal interactable "toplevel" window.
+    struct Window;
 
-    constexpr bool operator==(const scene_hotkey&) const noexcept = default;
-};
+    namespace window
+    {
+        auto create(scene::Client*) -> core::Ref<scene::Window>;
 
-CORE_MAKE_STRUCT_HASHABLE(scene_hotkey, v.mod, v.code)
+        void set_title(scene::Window*, std::string_view title);
 
-auto scene_client_hotkey_register(  scene_client*, scene_hotkey) -> bool;
-void scene_client_hotkey_unregister(scene_client*, scene_hotkey);
+        void map(  scene::Window*);
+        void unmap(scene::Window*);
+        void raise(scene::Window*);
+
+        auto get_tree(scene::Window*) -> scene::Tree*;
+
+        void request_reposition(scene::Window*, rect2f32 frame, vec2f32 gravity);
+        void set_frame(scene::Window*, rect2f32 frame);
+        auto get_frame(scene::Window*) -> rect2f32;
+    }
+
+    auto find_window_at(scene::Context*, vec2f32 point) -> scene::Window*;
+}
 
 // -----------------------------------------------------------------------------
 
-enum class scene_event_type
+namespace scene
 {
-    hotkey,
-
-    keyboard_enter,
-    keyboard_leave,
-    keyboard_key,
-    keyboard_modifier,
-
-    pointer_enter,
-    pointer_leave,
-    pointer_motion,
-    pointer_button,
-    pointer_scroll,
-
-    // Requests that a client adjust its position/size as requested.
-    // This request does not need to be honoured, clients may update
-    // their window frames at any time for any reason.
-    window_reposition,
-
-    output_added,
-    output_configured,
-    output_removed,
-    output_layout,
-
-    // Requests the output owner to make a `scene_frame` call at the
-    // next time that the output would accept a content update.
-    output_frame_request,
-
-    // Sent before a frame may be composited to an output.
-    // This may be sent even if there is no new scene graph changes
-    // to commit, in response to a scene frame request.
-    // Scene graph changes made directly in response to this event
-    // will be applied immediately.
-    output_frame,
-
-    selection,
-};
-
-struct scene_hotkey_event
-{
-    scene_input_device* input_device;
-
-    scene_hotkey hotkey;
-    bool         pressed;
-};
-
-struct scene_keyboard_event
-{
-    scene_keyboard* keyboard;
-    union {
-        struct {
-            scene_scancode code;
-            bool           pressed;
-            bool           quiet;
-        } key;
-        struct {
-            scene_input_region* region;
-        } focus;
+    enum class IterateAction
+    {
+        next, // Continue to next iteration action.
+        skip, // Skip children.
+        stop, // Stop iteration. If called in pre-visit, post-visit will be skipped.
     };
-};
 
-struct scene_pointer_event
-{
-    scene_pointer* pointer;
-    union {
-        struct {
-            scene_scancode code;
-            bool           pressed;
-            bool           quiet;
-        } button;
-        struct {
-            vec2f32 rel_accel;
-            vec2f32 rel_unaccel;
-        } motion;
-        struct {
-            vec2f32 delta;
-        } scroll;
-        struct {
-            scene_input_region* region;
-        } focus;
+    static constexpr auto iterate_default = [](auto*) -> scene::IterateAction { return scene::IterateAction::next; };
+
+    enum class IterateDirection
+    {
+        front_to_back,
+        back_to_front,
     };
-};
 
-struct scene_window_event
+    template<typename Pre, typename Leaf, typename Post>
+    auto iterate(scene::Tree* tree, scene::IterateDirection dir, Pre&& pre, Leaf&& leaf, Post&& post) -> scene::IterateAction
+    {
+        if (!tree->enabled) return scene::IterateAction::next;
+
+        auto pre_action = pre(tree);
+        if (pre_action == scene::IterateAction::stop) return scene::IterateAction::stop;
+        if (pre_action == scene::IterateAction::skip) return scene::IterateAction::next;
+
+        auto for_each = [&](auto&& children) -> scene::IterateAction {
+            for (auto* child : children) {
+                if (child->type == scene::NodeType::tree) {
+                    if (scene::iterate(static_cast<scene::Tree*>(child), dir,
+                            std::forward<Pre>(pre), std::forward<Leaf>(leaf), std::forward<Post>(post))
+                                == scene::IterateAction::stop) {
+                        return scene::IterateAction::stop;
+                    }
+                } else {
+                    if (leaf(child) == scene::IterateAction::stop) return scene::IterateAction::stop;
+                }
+            }
+            return scene::IterateAction::next;
+        };
+
+        auto action = dir == scene::IterateDirection::front_to_back
+            ? for_each(tree->children | std::views::reverse)
+            : for_each(tree->children);
+        if (action == scene::IterateAction::stop) return action;
+
+        return post(tree);
+    }
+}
+
+// -----------------------------------------------------------------------------
+
+namespace scene
 {
-    scene_window* window;
-    union {
-        struct {
-            rect2f32 frame;
-            vec2f32  gravity;
-        } reposition;
+    struct Hotkey
+    {
+        core::Flags<scene::Modifier> mod;
+        scene::Scancode        code;
+
+        constexpr bool operator==(const scene::Hotkey&) const noexcept = default;
     };
-};
+}
 
-struct scene_redraw_event
+CORE_MAKE_STRUCT_HASHABLE(scene::Hotkey, v.mod, v.code)
+
+namespace scene::client
 {
-    scene_output* output;
-};
+    auto hotkey_register(  scene::Client*, scene::Hotkey) -> bool;
+    void hotkey_unregister(scene::Client*, scene::Hotkey);
+}
 
-struct scene_data_event
+// -----------------------------------------------------------------------------
+
+namespace scene
 {
-    scene_data_source* source;
-};
+    enum class EventType
+    {
+        hotkey,
 
-struct scene_event
-{
-    scene_event_type type;
+        keyboard_enter,
+        keyboard_leave,
+        keyboard_key,
+        keyboard_modifier,
 
-    union {
-        scene_hotkey_event   hotkey;
-        scene_window_event   window;
-        scene_keyboard_event keyboard;
-        scene_pointer_event  pointer;
-        scene_redraw_event   redraw;
-        scene_output*        output;
-        scene_data_event     data;
+        pointer_enter,
+        pointer_leave,
+        pointer_motion,
+        pointer_button,
+        pointer_scroll,
+
+        // Requests that a client adjust its position/size as requested.
+        // This request does not need to be honoured, clients may update
+        // their window frames at any time for any reason.
+        window_reposition,
+
+        output_added,
+        output_configured,
+        output_removed,
+        output_layout,
+
+        // Requests the output owner to make a `scene::frame` call at the
+        // next time that the output would accept a content update.
+        output_frame_request,
+
+        // Sent before a frame may be composited to an output.
+        // This may be sent even if there is no new scene graph changes
+        // to commit, in response to a scene frame request.
+        // Scene graph changes made directly in response to this event
+        // will be applied immediately.
+        output_frame,
+
+        selection,
     };
-};
 
-using scene_event_handler_fn = void(scene_event*);
+    struct HotkeyEvent
+    {
+        scene::InputDevice* input_device;
 
-void scene_client_set_event_handler(scene_client*, std::move_only_function<scene_event_handler_fn>&&);
+        scene::Hotkey hotkey;
+        bool         pressed;
+    };
+
+    struct KeyboardEvent
+    {
+        scene::Keyboard* keyboard;
+        union {
+            struct {
+                scene::Scancode code;
+                bool           pressed;
+                bool           quiet;
+            } key;
+            struct {
+                scene::InputRegion* region;
+            } focus;
+        };
+    };
+
+    struct PointerEvent
+    {
+        scene::Pointer* pointer;
+        union {
+            struct {
+                scene::Scancode code;
+                bool           pressed;
+                bool           quiet;
+            } button;
+            struct {
+                vec2f32 rel_accel;
+                vec2f32 rel_unaccel;
+            } motion;
+            struct {
+                vec2f32 delta;
+            } scroll;
+            struct {
+                scene::InputRegion* region;
+            } focus;
+        };
+    };
+
+    struct WindowEvent
+    {
+        scene::Window* window;
+        union {
+            struct {
+                rect2f32 frame;
+                vec2f32  gravity;
+            } reposition;
+        };
+    };
+
+    struct RedrawEvent
+    {
+        scene::Output* output;
+    };
+
+    struct DataEvent
+    {
+        scene::DataSource* source;
+    };
+
+    struct Event
+    {
+        scene::EventType type;
+
+        union {
+            scene::HotkeyEvent   hotkey;
+            scene::WindowEvent   window;
+            scene::KeyboardEvent keyboard;
+            scene::PointerEvent  pointer;
+            scene::RedrawEvent   redraw;
+            scene::Output*        output;
+            scene::DataEvent     data;
+        };
+    };
+
+    using EventHandlerFn = void(scene::Event*);
+
+    namespace client
+    {
+        void set_event_handler(scene::Client*, std::move_only_function<scene::EventHandlerFn>&&);
+    }
+}
