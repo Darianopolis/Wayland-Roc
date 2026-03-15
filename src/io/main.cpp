@@ -3,7 +3,7 @@
 #include "core/math.hpp"
 
 static
-void render(gpu::Context* gpu, io_output* output, gpu::ImagePool* pool)
+void render(gpu::Context* gpu, io::Output* output, gpu::ImagePool* pool)
 {
     auto format = gpu::format::from_drm(DRM_FORMAT_ABGR8888);
     auto usage = gpu::ImageUsage::transfer_dst;
@@ -25,34 +25,34 @@ void render(gpu::Context* gpu, io_output* output, gpu::ImagePool* pool)
         1, core::ptr_to(VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}));
 
     auto done = gpu::submit(commands.get(), {});
-    output->commit(image.get(), done, io_output_commit_flag::vsync);
+    output->commit(image.get(), done, io::OutputCommitFlag::vsync);
 }
 
 static
-void handle_event(io_context* io, gpu::Context* gpu, gpu::ImagePool* pool, io_event* event)
+void handle_event(io::Context* io, gpu::Context* gpu, gpu::ImagePool* pool, io::Event* event)
 {
     auto& input = event->input;
 
     switch (event->type) {
-        break;case io_event_type::shutdown_requested:
+        break;case io::EventType::shutdown_requested:
             log_error("io::shutdown_requested({})", core::to_string(event->shutdown.reason));
-            io_stop(io);
-        break;case io_event_type::input_event:
+            io::stop(io);
+        break;case io::EventType::input_event:
             static constexpr auto channel_to_str = [](auto& e) {
                 return std::format("{} = {}", libevdev_event_code_get_name(e.type, e.code), e.value);
             };
             log_info("io::input_event({:s}{})",
                 input.channels | std::views::transform(channel_to_str) | std::views::join_with(", "sv),
                 input.quiet ? ", QUIET" : "");
-        break;case io_event_type::output_configure:
+        break;case io::EventType::output_configure:
             log_info("io::output_configure{}", core::to_string(event->output.output->info().size));
             event->output.output->request_frame();
-        break;case io_event_type::output_frame:
+        break;case io::EventType::output_frame:
             render(gpu, event->output.output, pool);
-        break;case io_event_type::input_added:
-              case io_event_type::input_removed:
-              case io_event_type::output_added:
-              case io_event_type::output_removed:
+        break;case io::EventType::input_added:
+              case io::EventType::input_removed:
+              case io::EventType::output_added:
+              case io::EventType::output_removed:
             log_warn("io::{}", core::to_string(event->type));
     }
 }
@@ -61,10 +61,10 @@ int main()
 {
     auto event_loop = core::event_loop::create();
     auto gpu = gpu::create({}, event_loop.get());
-    auto io = io_create(event_loop.get(), gpu.get());
+    auto io = io::create(event_loop.get(), gpu.get());
     auto pool = gpu::image_pool::create(gpu.get());
-    io_set_event_handler(io.get(), [&](io_event* event) {
+    io::set_event_handler(io.get(), [&](io::Event* event) {
         handle_event(io.get(), gpu.get(), pool.get(), event);
     });
-    io_run(io.get());
+    io::run(io.get());
 }

@@ -14,7 +14,7 @@ int main()
 
     auto event_loop = core::event_loop::create();
     auto gpu = gpu::create({}, event_loop.get());
-    auto io = io_create(event_loop.get(), gpu.get());
+    auto io = io::create(event_loop.get(), gpu.get());
     auto scene = scene_create(gpu.get(), io.get());
     auto wm = wm_create(scene.get());
 
@@ -24,7 +24,7 @@ int main()
     auto output_client = scene_client_create(scene.get());
     struct output {
         core::Ref<scene_output> scene;
-        io_output*        io;
+        io::Output* io;
     };
     std::vector<output> outputs;
     auto reflow_outputs = [&] {
@@ -35,28 +35,28 @@ int main()
             x += f32(size.x);
         }
     };
-    io_set_event_handler(io.get(), [&](io_event* event) {
+    io::set_event_handler(io.get(), [&](io::Event* event) {
         switch (event->type) {
             // shutdown
-            break;case io_event_type::shutdown_requested:
-                io_stop(io.get());
+            break;case io::EventType::shutdown_requested:
+                io::stop(io.get());
 
             // input
-            break;case io_event_type::input_added:
-                  case io_event_type::input_removed:
-                  case io_event_type::input_event:
+            break;case io::EventType::input_added:
+                  case io::EventType::input_removed:
+                  case io::EventType::input_event:
                 scene_push_io_event(scene.get(), event);
 
             // output
-            break;case io_event_type::output_added:
+            break;case io::EventType::output_added:
                 outputs.emplace_back(scene_output_create(output_client.get()), event->output.output);
                 reflow_outputs();
-            break;case io_event_type::output_configure:
+            break;case io::EventType::output_configure:
                 reflow_outputs();
-            break;case io_event_type::output_removed:
+            break;case io::EventType::output_removed:
                 std::erase_if(outputs, [&](auto& p) { return p.io == event->output.output; });
                 reflow_outputs();
-            break;case io_event_type::output_frame: {
+            break;case io::EventType::output_frame: {
                 auto output = std::ranges::find_if(outputs, [&](auto& p) { return p.io == event->output.output; });
                 scene_frame(scene.get(), output->scene.get(), output->io, image_pool.get());
             }
@@ -257,7 +257,7 @@ int main()
         defer { ImGui::End(); };
         if (ImGui::Begin("Roc")) {
             if (ImGui::Button("New Output")) {
-                io_add_output(io.get());
+                io::add_output(io.get());
             }
 
             if (ImGui::Button("Reposition")) {
@@ -355,5 +355,5 @@ int main()
 
     // Run
 
-    io_run(io.get());
+    io::run(io.get());
 }

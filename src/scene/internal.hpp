@@ -44,7 +44,7 @@ struct scene_context
     struct {
         core::Ref<scene_keyboard> keyboard;
         core::Ref<scene_pointer>  pointer;
-        std::vector<io_input_device*> led_devices;
+        std::vector<io::InputDevice*> led_devices;
     } seat;
 
     core::Ref<scene_data_source> selection;
@@ -179,9 +179,9 @@ void scene_output_request_frame(scene_output*);
 
 // -----------------------------------------------------------------------------
 
-void scene_handle_input_added(  scene_context*, io_input_device*);
-void scene_handle_input_removed(scene_context*, io_input_device*);
-void scene_handle_input(        scene_context*, const io_input_event&);
+void scene_handle_input_added(  scene_context*, io::InputDevice*);
+void scene_handle_input_removed(scene_context*, io::InputDevice*);
+void scene_handle_input(        scene_context*, const io::InputEvent&);
 
 // -----------------------------------------------------------------------------
 

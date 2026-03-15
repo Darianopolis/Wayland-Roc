@@ -1,10 +1,10 @@
 #include "../internal.hpp"
 
-struct io_udev
+struct io::Udev
 {
 };
 
-void io_udev_init(io_context*)
+void io::udev::init(io::Context*)
 {
     log_error("IO - udev backend not implemented");
 }

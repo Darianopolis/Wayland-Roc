@@ -456,14 +456,14 @@ void scene_pointer_set_driver(scene_pointer* pointer, std::move_only_function<sc
 
 // -----------------------------------------------------------------------------
 
-void scene_handle_input_added(scene_context* ctx, io_input_device* device)
+void scene_handle_input_added(scene_context* ctx, io::InputDevice* device)
 {
-    if (device->info().capabilities.contains(io_input_device_capability::libinput_led)) {
+    if (device->info().capabilities.contains(io::InputDeviceCapability::libinput_led)) {
         ctx->seat.led_devices.emplace_back(device);
     }
 }
 
-void scene_handle_input_removed(scene_context* ctx, io_input_device* device)
+void scene_handle_input_removed(scene_context* ctx, io::InputDevice* device)
 {
     std::erase(ctx->seat.led_devices, device);
 }
@@ -483,7 +483,7 @@ auto categorize_key(scene_scancode code) -> scene_input_device_type
     }
 }
 
-void scene_handle_input(scene_context* ctx, const io_input_event& event)
+void scene_handle_input(scene_context* ctx, const io::InputEvent& event)
 {
     vec2f32 motion = {};
     vec2f32 scroll = {};

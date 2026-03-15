@@ -1,10 +1,10 @@
 #include "../internal.hpp"
 
-struct io_drm
+struct io::Drm
 {
 };
 
-void io_drm_init(io_context*)
+void io::drm::init(io::Context*)
 {
     log_error("IO - drm backend not implemented");
 }

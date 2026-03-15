@@ -5,7 +5,7 @@
 static
 void registry_global(void* data, wl_registry*, u32 name, const char* interface, u32 version)
 {
-    auto* ctx = static_cast<io_context*>(data);
+    auto* ctx = static_cast<io::Context*>(data);
     auto* wl = ctx->wayland.get();
 
     auto match_interface = [&](const wl_interface* wl_interface, auto member) -> bool {
@@ -25,7 +25,7 @@ void registry_global(void* data, wl_registry*, u32 name, const char* interface, 
     };
 
 #define BIND_BEGIN                if (false) {}
-#define BIND_INTERFACE(Interface) else if (match_interface(&Interface##_interface, &io_wayland::Interface))
+#define BIND_INTERFACE(Interface) else if (match_interface(&Interface##_interface, &io::Wayland::Interface))
 #define BIND_END                  else log_trace("wl_global[{:2} : {:41}], version = {}", name, interface, version);
 
     BIND_BEGIN
@@ -67,7 +67,7 @@ IO_WL_LISTENER(xdg_wm_base) = {
 // -----------------------------------------------------------------------------
 
 static
-void display_read(io_context* ctx, core::Flags<core::FdEventBit> events)
+void display_read(io::Context* ctx, core::Flags<core::FdEventBit> events)
 {
     ctx->wayland->current_dispatch_time = std::chrono::steady_clock::now();
 
@@ -79,15 +79,15 @@ void display_read(io_context* ctx, core::Flags<core::FdEventBit> events)
     wl_display_flush(ctx->wayland->wl_display);
 }
 
-void io_wayland_init(io_context* ctx)
+void io::wayland::init(io::Context* ctx)
 {
-    ctx->wayland = core::create<io_wayland>();
+    ctx->wayland = core::create<io::Wayland>();
     auto* wl = ctx->wayland.get();
 
     wl->wl_display = wl_display_connect(nullptr);
 }
 
-void io_wayland_start(io_context* ctx)
+void io::wayland::start(io::Context* ctx)
 {
     auto* wl = ctx->wayland.get();
 
@@ -106,10 +106,10 @@ void io_wayland_start(io_context* ctx)
             if (ctx) display_read(ctx.get(), events);
         });
 
-    io_add_output(ctx);
+    io::add_output(ctx);
 }
 
-io_wayland::~io_wayland()
+io::Wayland::~Wayland()
 {
     if (keyboard) keyboard = nullptr;
     if (pointer)  pointer = nullptr;

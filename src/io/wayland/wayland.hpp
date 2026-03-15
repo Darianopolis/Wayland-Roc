@@ -15,44 +15,54 @@ CORE_UNIX_ERROR_BEHAVIOUR(wl_display_dispatch_timeout, negative_one)
 
 // -----------------------------------------------------------------------------
 
-struct io_wayland;
-struct io_output_wayland;
-struct io_input_device_wayland_keyboard;
-struct io_input_device_wayland_pointer;
+namespace io
+{
+    struct Wayland;
+}
+
+namespace io::wayland
+{
+    struct Output;
+    struct Keyboard;
+    struct Pointer;
+}
 
 // -----------------------------------------------------------------------------
 
-template<typename K, typename V>
-struct io_wl_proxy_cache
+namespace io::wayland
 {
-    using Vptr = std::unique_ptr<V, void(*)(V*)>;
-    struct entry { core::Weak<K> key; Vptr value; };
-
-    void(*destroy)(V*);
-    std::vector<entry> entries;
-
-    V* find(K* needle)
+    template<typename K, typename V>
+    struct WlProxyCache
     {
-        V* found = nullptr;
-        std::erase_if(entries, [&](const auto& entry) {
-            if (!entry.key) return true;
-            if (entry.key.get() == needle) found = entry.value.get();
-            return false;
-        });
-        return found;
-    }
+        using Vptr = std::unique_ptr<V, void(*)(V*)>;
+        struct entry { core::Weak<K> key; Vptr value; };
 
-    V* insert(K* key, V* value)
+        void(*destroy)(V*);
+        std::vector<entry> entries;
+
+        V* find(K* needle)
+        {
+            V* found = nullptr;
+            std::erase_if(entries, [&](const auto& entry) {
+                if (!entry.key) return true;
+                if (entry.key.get() == needle) found = entry.value.get();
+                return false;
+            });
+            return found;
+        }
+
+        V* insert(K* key, V* value)
+        {
+            return entries.emplace_back(key, Vptr(value, destroy)).value.get();
+        }
+    };
+
+    template<typename T>
+    std::span<T> to_span(wl_array* array)
     {
-        return entries.emplace_back(key, Vptr(value, destroy)).value.get();
+        usz count = array->size / sizeof(T);
+        return std::span<T>(static_cast<T*>(array->data), count);
     }
-};
-
-template<typename T>
-std::span<T> io_to_span(wl_array* array)
-{
-    usz count = array->size / sizeof(T);
-    return std::span<T>(static_cast<T*>(array->data), count);
 }
 
 // -----------------------------------------------------------------------------
@@ -64,113 +74,125 @@ std::span<T> io_to_span(wl_array* array)
 #define IO_WL_STUB_QUIET(Name) \
     .Name = [](auto...) {}
 
-struct io_wayland
+namespace io
 {
-    IO_WL_INTERFACE(wl_display);
-    IO_WL_INTERFACE(wl_registry);
-    IO_WL_INTERFACE(wl_compositor);
-    IO_WL_INTERFACE(xdg_wm_base);
-    IO_WL_INTERFACE(wl_seat);
-    IO_WL_INTERFACE(zxdg_decoration_manager_v1);
-    IO_WL_INTERFACE(zwp_relative_pointer_manager_v1);
-    IO_WL_INTERFACE(zwp_pointer_constraints_v1);
-    IO_WL_INTERFACE(zwp_linux_dmabuf_v1);
-    IO_WL_INTERFACE(wp_linux_drm_syncobj_manager_v1);
-
-    struct {
-        std::vector<std::pair<gpu::Format, gpu::DrmModifier>> table;
-        gpu::FormatSet set;
-    } format;
-
-    core::Fd wl_display_fd = {};
-
-    std::vector<core::Ref<io_output_wayland>> outputs;
-
-    std::chrono::steady_clock::time_point current_dispatch_time;
-
-    core::Ref<io_input_device_wayland_keyboard> keyboard;
-    core::Ref<io_input_device_wayland_pointer>  pointer;
-
-    bool in_keyboard_enter;
-
-    io_wl_proxy_cache<gpu::Semaphore, wp_linux_drm_syncobj_timeline_v1> syncobj_cache { wp_linux_drm_syncobj_timeline_v1_destroy };
-    io_wl_proxy_cache<gpu::Image, wl_buffer> buffer_cache  { wl_buffer_destroy };
-
-    ~io_wayland();
-};
-
-// -----------------------------------------------------------------------------
-
-struct io_output_wayland : io_output_base
-{
-    IO_WL_INTERFACE(wl_surface);
-    IO_WL_INTERFACE(xdg_surface);
-    IO_WL_INTERFACE(xdg_toplevel);
-    IO_WL_INTERFACE(zxdg_toplevel_decoration_v1);
-    IO_WL_INTERFACE(zwp_locked_pointer_v1);
-    IO_WL_INTERFACE(wp_linux_drm_syncobj_surface_v1);
-
-    wl_callback* frame_callback = {};
-    bool pointer_locked = false;
-
-    struct {
-        vec2u32 size;
-    } configure;
-
-    virtual auto info() -> io_output_info final override
+    struct Wayland
     {
-        return {
-            .size = size,
-            .formats = &ctx->wayland->format.set,
-        };
-    }
+        IO_WL_INTERFACE(wl_display);
+        IO_WL_INTERFACE(wl_registry);
+        IO_WL_INTERFACE(wl_compositor);
+        IO_WL_INTERFACE(xdg_wm_base);
+        IO_WL_INTERFACE(wl_seat);
+        IO_WL_INTERFACE(zxdg_decoration_manager_v1);
+        IO_WL_INTERFACE(zwp_relative_pointer_manager_v1);
+        IO_WL_INTERFACE(zwp_pointer_constraints_v1);
+        IO_WL_INTERFACE(zwp_linux_dmabuf_v1);
+        IO_WL_INTERFACE(wp_linux_drm_syncobj_manager_v1);
 
-    struct release_slot
-    {
-        core::Ref<gpu::Image>     image;
-        core::Ref<gpu::Semaphore> semaphore;
-        u64                point;
+        struct {
+            std::vector<std::pair<gpu::Format, gpu::DrmModifier>> table;
+            gpu::FormatSet set;
+        } format;
+
+        core::Fd wl_display_fd = {};
+
+        std::vector<core::Ref<io::wayland::Output>> outputs;
+
+        std::chrono::steady_clock::time_point current_dispatch_time;
+
+        core::Ref<io::wayland::Keyboard> keyboard;
+        core::Ref<io::wayland::Pointer>  pointer;
+
+        bool in_keyboard_enter;
+
+        io::wayland::WlProxyCache<gpu::Semaphore, wp_linux_drm_syncobj_timeline_v1> syncobj_cache { wp_linux_drm_syncobj_timeline_v1_destroy };
+        io::wayland::WlProxyCache<gpu::Image, wl_buffer> buffer_cache  { wl_buffer_destroy };
+
+        ~Wayland();
     };
-
-    std::vector<release_slot> release_slots;
-
-    virtual void commit(gpu::Image*, gpu::Syncpoint done, core::Flags<io_output_commit_flag>) final override;
-
-    ~io_output_wayland();
-};
-
-inline
-auto get_impl(io_output* output) -> io_output_wayland*
-{
-    return dynamic_cast<io_output_wayland*>(output);
 }
 
 // -----------------------------------------------------------------------------
 
-struct io_input_device_wayland_keyboard : io_input_device_base
+namespace io::wayland
 {
-    IO_WL_INTERFACE(wl_keyboard);
+    struct Output : io::OutputBase
+    {
+        IO_WL_INTERFACE(wl_surface);
+        IO_WL_INTERFACE(xdg_surface);
+        IO_WL_INTERFACE(xdg_toplevel);
+        IO_WL_INTERFACE(zxdg_toplevel_decoration_v1);
+        IO_WL_INTERFACE(zwp_locked_pointer_v1);
+        IO_WL_INTERFACE(wp_linux_drm_syncobj_surface_v1);
 
-    ~io_input_device_wayland_keyboard();
-};
+        wl_callback* frame_callback = {};
+        bool pointer_locked = false;
 
-struct io_input_device_wayland_pointer : io_input_device_base
-{
-    IO_WL_INTERFACE(wl_pointer);
-    IO_WL_INTERFACE(zwp_relative_pointer_v1);
+        struct {
+            vec2u32 size;
+        } configure;
 
-    core::Weak<io_output> current_output;
-    u32 last_serial;
+        virtual auto info() -> io::OutputInfo final override
+        {
+            return {
+                .size = size,
+                .formats = &ctx->wayland->format.set,
+            };
+        }
 
-    ~io_input_device_wayland_pointer();
-};
+        struct release_slot
+        {
+            core::Ref<gpu::Image>     image;
+            core::Ref<gpu::Semaphore> semaphore;
+            u64                point;
+        };
+
+        std::vector<release_slot> release_slots;
+
+        virtual void commit(gpu::Image*, gpu::Syncpoint done, core::Flags<io::OutputCommitFlag>) final override;
+
+        ~Output();
+    };
+
+    inline
+    auto get_impl(io::Output* output) -> io::wayland::Output*
+    {
+        return dynamic_cast<io::wayland::Output*>(output);
+    }
+}
 
 // -----------------------------------------------------------------------------
 
-template<typename T>
-void io_wl_destroy(auto fn, T* t)
+namespace io::wayland
 {
-    if (t) fn(t);
+    struct Keyboard : io::InputDeviceBase
+    {
+        IO_WL_INTERFACE(wl_keyboard);
+
+        ~Keyboard();
+    };
+
+    struct Pointer : io::InputDeviceBase
+    {
+        IO_WL_INTERFACE(wl_pointer);
+        IO_WL_INTERFACE(zwp_relative_pointer_v1);
+
+        core::Weak<io::Output> current_output;
+        u32 last_serial;
+
+        ~Pointer();
+    };
+}
+
+// -----------------------------------------------------------------------------
+
+namespace io::wayland
+{
+    template<typename T>
+    void destroy(auto fn, T* t)
+    {
+        if (t) fn(t);
+    }
 }
 
 #define IO_WL_DESTROY(T) if (T) T##_destroy(T)

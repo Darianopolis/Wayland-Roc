@@ -31,7 +31,7 @@ void scene_render_init(scene_context* ctx)
     });
 }
 
-void scene_frame(scene_context* ctx, scene_output* output, io_output* io_output, gpu::ImagePool* pool)
+void scene_frame(scene_context* ctx, scene_output* output, io::Output* io_output, gpu::ImagePool* pool)
 {
     scene_broadcast_event(ctx, core::ptr_to(scene_event {
         .type = scene_event_type::output_frame,
@@ -55,7 +55,7 @@ void scene_frame(scene_context* ctx, scene_output* output, io_output* io_output,
 
     auto done = scene_render(ctx, target.get(), output->viewport);
 
-    io_output->commit(target.get(), done, io_output_commit_flag::vsync);
+    io_output->commit(target.get(), done, io::OutputCommitFlag::vsync);
 }
 
 auto scene_render(scene_context* ctx, gpu::Image* target, rect2f32 viewport) -> gpu::Syncpoint

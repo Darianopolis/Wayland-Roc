@@ -7,28 +7,28 @@ scene_context::~scene_context()
     core_assert(windows.empty());
 }
 
-void scene_push_io_event(scene_context* ctx, io_event* event)
+void scene_push_io_event(scene_context* ctx, io::Event* event)
 {
     switch (event->type) {
-        break;case io_event_type::shutdown_requested:
+        break;case io::EventType::shutdown_requested:
             ;
 
-        break;case io_event_type::input_added:
+        break;case io::EventType::input_added:
             scene_handle_input_added(ctx, event->input.device);
-        break;case io_event_type::input_removed:
+        break;case io::EventType::input_removed:
             scene_handle_input_removed(ctx, event->input.device);
-        break;case io_event_type::input_event:
+        break;case io::EventType::input_event:
             scene_handle_input(ctx, event->input);
 
-        break;case io_event_type::output_configure:
-              case io_event_type::output_frame:
-              case io_event_type::output_added:
-              case io_event_type::output_removed:
+        break;case io::EventType::output_configure:
+              case io::EventType::output_frame:
+              case io::EventType::output_added:
+              case io::EventType::output_removed:
             ;
     }
 }
 
-auto scene_create(gpu::Context* gpu, io_context* io) -> core::Ref<scene_context>
+auto scene_create(gpu::Context* gpu, io::Context* io) -> core::Ref<scene_context>
 {
     auto scene = core::create<scene_context>();
 

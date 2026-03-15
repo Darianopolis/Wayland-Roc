@@ -1,10 +1,10 @@
 #include "../internal.hpp"
 
-struct io_session
+struct io::Session
 {
 };
 
-void io_session_init(io_context*)
+void io::session::init(io::Context*)
 {
     log_error("IO - session backend not implemented");
 }

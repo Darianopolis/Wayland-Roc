@@ -1,23 +1,23 @@
 #include "internal.hpp"
 
-auto io_create(core::EventLoop* event_loop, gpu::Context* gpu) -> core::Ref<io_context>
+auto io::create(core::EventLoop* event_loop, gpu::Context* gpu) -> core::Ref<io::Context>
 {
-    auto ctx = core::create<io_context>();
+    auto ctx = core::create<io::Context>();
 
     ctx->event_loop = event_loop;
     ctx->gpu = gpu;
 
-    io_session_init( ctx.get());
-    io_libinput_init(ctx.get());
-    io_evdev_init(   ctx.get());
-    io_drm_init(     ctx.get());
-    io_wayland_init( ctx.get());
+    io::session::init( ctx.get());
+    io::libinput::init(ctx.get());
+    io::evdev::init(   ctx.get());
+    io::drm::init(     ctx.get());
+    io::wayland::init( ctx.get());
 
     return ctx;
 }
 
 static
-void shutdown(io_context* ctx)
+void shutdown(io::Context* ctx)
 {
     ctx->wayland.destroy();
     ctx->drm.destroy();
@@ -28,7 +28,7 @@ void shutdown(io_context* ctx)
     core::event_loop::stop(ctx->event_loop);
 }
 
-io_context::~io_context()
+io::Context::~Context()
 {
     core_assert(!wayland);
     core_assert(!drm);
@@ -37,13 +37,13 @@ io_context::~io_context()
     core_assert(!session);
 }
 
-void io_set_event_handler(io_context* ctx, std::move_only_function<io_event_handler>&& handler)
+void io::set_event_handler(io::Context* ctx, std::move_only_function<io::EventHandler>&& handler)
 {
     ctx->event_handler = std::move(handler);
 }
 
 static
-core::Weak<io_context> signal_context;
+core::Weak<io::Context> signal_context;
 
 static
 void signal_handler(int sig)
@@ -56,12 +56,12 @@ void signal_handler(int sig)
     if (!signal_context) return;
 
     switch (sig) {
-        break;case SIGTERM: io_request_shutdown(signal_context.get(), io_shutdown_reason::terminate_received);
-        break;case SIGINT:  io_request_shutdown(signal_context.get(), io_shutdown_reason::interrupt_received);
+        break;case SIGTERM: io::request_shutdown(signal_context.get(), io::ShutdownReason::terminate_received);
+        break;case SIGINT:  io::request_shutdown(signal_context.get(), io::ShutdownReason::interrupt_received);
     }
 }
 
-void io_run(io_context* ctx)
+void io::run(io::Context* ctx)
 {
     core_assert(ctx->event_handler);
 
@@ -70,7 +70,7 @@ void io_run(io_context* ctx)
     signal(SIGTERM, signal_handler);
 
     if (ctx->wayland) {
-        io_wayland_start(ctx);
+        io::wayland::start(ctx);
     }
 
     core::event_loop::run(ctx->event_loop);
@@ -80,11 +80,11 @@ void io_run(io_context* ctx)
     signal(SIGTERM, SIG_IGN);
 }
 
-void io_request_shutdown(io_context* ctx, io_shutdown_reason reason)
+void io::request_shutdown(io::Context* ctx, io::ShutdownReason reason)
 {
     core::event_loop::enqueue(ctx->event_loop, [ctx, reason] {
-        io_post_event(ctx, core::ptr_to(io_event {
-            .type = io_event_type::shutdown_requested,
+        io::post_event(ctx, core::ptr_to(io::Event {
+            .type = io::EventType::shutdown_requested,
             .shutdown {
                 .reason = reason,
             }
@@ -92,7 +92,7 @@ void io_request_shutdown(io_context* ctx, io_shutdown_reason reason)
     });
 }
 
-void io_stop(io_context* ctx)
+void io::stop(io::Context* ctx)
 {
     if (ctx->stop_requested) return;
     ctx->stop_requested = true;
@@ -102,7 +102,7 @@ void io_stop(io_context* ctx)
     });
 }
 
-void io_post_event(io_context* ctx, io_event* event)
+void io::post_event(io::Context* ctx, io::Event* event)
 {
     ctx->event_handler(event);
 }

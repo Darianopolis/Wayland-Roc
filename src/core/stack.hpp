@@ -38,7 +38,7 @@ namespace core
     };
 
     inline
-    auto core_get_thread_stack_storage() -> core::ThreadStackStorage&
+    auto get_thread_stack_storage() -> core::ThreadStackStorage&
     {
         thread_local core::ThreadStackStorage stack;
         return stack;
@@ -51,7 +51,7 @@ namespace core
 
     public:
         ThreadStack()
-            : stack(core_get_thread_stack_storage())
+            : stack(get_thread_stack_storage())
             , old_head(stack.head)
         {}
 

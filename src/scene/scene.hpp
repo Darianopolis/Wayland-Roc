@@ -17,7 +17,14 @@ struct scene_window;
 
 struct scene_context;
 
-auto scene_create(gpu::Context*, struct io_context*) -> core::Ref<scene_context>;
+namespace io
+{
+    struct Context;
+    struct Event;
+    struct Output;
+}
+
+auto scene_create(gpu::Context*, io::Context*) -> core::Ref<scene_context>;
 
 enum class scene_layer
 {
@@ -33,7 +40,7 @@ void scene_request_frame(scene_context*);
 
 // -----------------------------------------------------------------------------
 
-void scene_push_io_event(scene_context* ctx, struct io_event*);
+void scene_push_io_event(scene_context* ctx, io::Event*);
 
 // -----------------------------------------------------------------------------
 
@@ -65,7 +72,7 @@ struct scene_find_output_result
 };
 auto scene_find_output_for_point(scene_context*, vec2f32 point) -> scene_find_output_result;
 
-void scene_frame(scene_context* ctx, scene_output*, struct io_output* output, gpu::ImagePool* pool);
+void scene_frame(scene_context* ctx, scene_output*, io::Output* output, gpu::ImagePool* pool);
 
 // -----------------------------------------------------------------------------
 

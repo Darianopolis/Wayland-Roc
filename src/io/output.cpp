@@ -1,27 +1,27 @@
 #include "internal.hpp"
 
-io_output_base::~io_output_base()
+io::OutputBase::~OutputBase()
 {
-    io_output_remove(this);
+    io::output::remove(this);
 }
 
-void io_output_add(io_output_base* output)
+void io::output::add(io::OutputBase* output)
 {
     core_assert(!std::ranges::contains(output->ctx->outputs, output));
     output->ctx->outputs.emplace_back(output);
-    io_post_event(output->ctx, core::ptr_to(io_event {
-        .type = io_event_type::output_added,
+    io::post_event(output->ctx, core::ptr_to(io::Event {
+        .type = io::EventType::output_added,
         .output = {
             .output = output
         },
     }));
 }
 
-void io_output_remove(io_output_base* output)
+void io::output::remove(io::OutputBase* output)
 {
     if (std::erase(output->ctx->outputs, output)) {
-        io_post_event(output->ctx, core::ptr_to(io_event {
-            .type = io_event_type::output_removed,
+        io::post_event(output->ctx, core::ptr_to(io::Event {
+            .type = io::EventType::output_removed,
             .output = {
                 .output = output
             },
@@ -31,7 +31,7 @@ void io_output_remove(io_output_base* output)
 
 // -----------------------------------------------------------------------------
 
-void io_output_try_redraw(io_output_base* output)
+void io::output::try_redraw(io::OutputBase* output)
 {
     if (!output->frame_requested) return;
     if (!output->commit_available) return;
@@ -39,33 +39,33 @@ void io_output_try_redraw(io_output_base* output)
 
     output->frame_requested = false;
 
-    io_post_event(output->ctx, core::ptr_to(io_event {
-        .type = io_event_type::output_frame,
+    io::post_event(output->ctx, core::ptr_to(io::Event {
+        .type = io::EventType::output_frame,
         .output = {
             .output = output,
         }
     }));
 }
 
-void io_output_try_redraw_later(io_output_base* output)
+void io::output::try_redraw_later(io::OutputBase* output)
 {
     core::event_loop::enqueue(output->ctx->event_loop, [output = core::Weak(output)] {
         if (output) {
-            io_output_try_redraw(output.get());
+            io::output::try_redraw(output.get());
         }
     });
 }
 
-void io_output_base::request_frame()
+void io::OutputBase::request_frame()
 {
     frame_requested = true;
-    io_output_try_redraw_later(this);
+    io::output::try_redraw_later(this);
 }
 
-void io_output_post_configure(io_output_base* output)
+void io::output::post_configure(io::OutputBase* output)
 {
-    io_post_event(output->ctx, core::ptr_to(io_event {
-        .type = io_event_type::output_configure,
+    io::post_event(output->ctx, core::ptr_to(io::Event {
+        .type = io::EventType::output_configure,
         .output = {
             .output = output,
         }

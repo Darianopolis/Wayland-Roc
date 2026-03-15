@@ -1,10 +1,10 @@
 #include "../internal.hpp"
 
-struct io_libinput
+struct io::Libinput
 {
 };
 
-void io_libinput_init(io_context*)
+void io::libinput::init(io::Context*)
 {
     log_error("IO - libinput backend not implemented");
 }

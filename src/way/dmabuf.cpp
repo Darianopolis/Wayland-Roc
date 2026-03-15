@@ -8,7 +8,7 @@ void create_params(wl_client* client, wl_resource* resource, u32 params_id);
 static
 auto get_formats(way_server* server)
 {
-    // TODO: Intersect against io_output capabilities
+    // TODO: Intersect against io::Output capabilities
 
     return gpu::get_formats()
         | std::views::transform([server](auto format) -> std::pair<gpu::Format, std::span<const gpu::DrmModifier>> {
