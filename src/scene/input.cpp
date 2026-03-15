@@ -56,7 +56,7 @@ auto scene::keyboard::create(scene::Context* ctx) -> core::Ref<scene::Keyboard>
     keyboard->mod_masks[scene::Modifier::caps]  = xkb_keymap_mod_get_mask(keyboard->keymap, XKB_MOD_NAME_CAPS);
     keyboard->mod_masks[scene::Modifier::super] = xkb_keymap_mod_get_mask(keyboard->keymap, XKB_VMOD_NAME_SUPER);
     keyboard->mod_masks[scene::Modifier::alt]   = xkb_keymap_mod_get_mask(keyboard->keymap, XKB_VMOD_NAME_ALT)
-                                               | xkb_keymap_mod_get_mask(keyboard->keymap, XKB_VMOD_NAME_LEVEL3);
+                                                | xkb_keymap_mod_get_mask(keyboard->keymap, XKB_VMOD_NAME_LEVEL3);
     keyboard->mod_masks[scene::Modifier::num]   = xkb_keymap_mod_get_mask(keyboard->keymap, XKB_VMOD_NAME_NUM);
 
     return keyboard;

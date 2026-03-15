@@ -26,9 +26,9 @@ auto to_span(ImVector<T>& v) -> std::span<T>
 }
 
 static
-auto get_context(ImGuiContext* ctx = ImGui::GetCurrentContext()) -> imui_context*
+auto get_context(ImGuiContext* ctx = ImGui::GetCurrentContext()) -> imui::Context*
 {
-    return static_cast<imui_context*>(ctx->IO.BackendPlatformUserData);
+    return static_cast<imui::Context*>(ctx->IO.BackendPlatformUserData);
 }
 
 static
@@ -38,15 +38,15 @@ auto get_viewports() -> std::span<ImGuiViewport* const>
 }
 
 static
-auto get_data(ImGuiViewport* vp) -> imui_viewport_data*
+auto get_data(ImGuiViewport* vp) -> imui::ViewportData*
 {
-    return static_cast<imui_viewport_data*>(vp->PlatformUserData);
+    return static_cast<imui::ViewportData*>(vp->PlatformUserData);
 }
 
 // -----------------------------------------------------------------------------
 
 static
-auto find_viewport_for_input_region(imui_context* ctx, scene::InputRegion* region) -> ImGuiViewport*
+auto find_viewport_for_input_region(imui::Context* ctx, scene::InputRegion* region) -> ImGuiViewport*
 {
     for (auto* vp : get_viewports()) {
         if (auto* data = get_data(vp); data && data->input_plane.get() == region) {
@@ -69,7 +69,7 @@ auto find_viewport_for_window(scene::Window* window) -> ImGuiViewport*
     return nullptr;
 }
 
-auto imui_get_window(ImGuiWindow* window) -> scene::Window*
+auto imui::get_window(ImGuiWindow* window) -> scene::Window*
 {
     if (!window->Viewport) return nullptr;
     if (auto* data = get_data(window->Viewport)) return data->window.get();
@@ -82,7 +82,7 @@ static
 void Platform_CreateWindow(ImGuiViewport* vp)
 {
     auto* ctx = get_context();
-    auto* data = new imui_viewport_data();
+    auto* data = new imui::ViewportData();
 
     data->window = scene::window::create(ctx->client.get());
 
@@ -201,7 +201,7 @@ auto Platform_GetClipboardTextFn(ImGuiContext* imctx) -> const char*
 
 // -----------------------------------------------------------------------------
 
-imui_context::~imui_context()
+imui::Context::~Context()
 {
     ImGui::SetCurrentContext(context);
     ImGui::DestroyPlatformWindows();
@@ -212,14 +212,14 @@ imui_context::~imui_context()
 // -----------------------------------------------------------------------------
 
 static
-void reset_frame_textures(imui_context* ctx)
+void reset_frame_textures(imui::Context* ctx)
 {
     ctx->textures.clear();
     // Leave 0 as an invalid texture id
     ctx->textures.emplace_back();
 }
 
-auto imui_get_texture(imui_context* ctx, gpu::Image* image, gpu::Sampler* sampler, gpu::BlendMode blend) -> ImTextureID
+auto imui::get_texture(imui::Context* ctx, gpu::Image* image, gpu::Sampler* sampler, gpu::BlendMode blend) -> ImTextureID
 {
     auto idx = ctx->textures.size();
     ctx->textures.emplace_back(image, sampler, blend);
@@ -228,7 +228,7 @@ auto imui_get_texture(imui_context* ctx, gpu::Image* image, gpu::Sampler* sample
 
 // -----------------------------------------------------------------------------
 
-void imui_init(imui_context* ctx)
+void imui::init(imui::Context* ctx)
 {
     ctx->context = ImGui::CreateContext();
     ImGui::SetCurrentContext(ctx->context);
@@ -278,12 +278,12 @@ void imui_init(imui_context* ctx)
     // Create dummy main viewport.
     // This will never be used to draw anything as it will be zero sized, but
     // it needs to exist until ImGui removes the requirement for a main viewport.
-    ImGui::GetMainViewport()->PlatformUserData = new imui_viewport_data();
+    ImGui::GetMainViewport()->PlatformUserData = new imui::ViewportData();
 }
 
 // -----------------------------------------------------------------------------
 
-void imui_request_frame(imui_context* ctx)
+void imui::request_frame(imui::Context* ctx)
 {
     // Double-pump frames: ImGui always works based on last frame state,
     // so input needs a second frame to react against the updated state.
@@ -292,7 +292,7 @@ void imui_request_frame(imui_context* ctx)
 }
 
 static
-void render_viewport(imui_context* ctx, ImGuiViewport* vp)
+void render_viewport(imui::Context* ctx, ImGuiViewport* vp)
 {
     auto* data = get_data(vp);
     if (!data || !vp->DrawData) return;
@@ -346,11 +346,11 @@ void render_viewport(imui_context* ctx, ImGuiViewport* vp)
         vp->WorkSize = vp->Size = to_imvec(frame->extent);
         vp->PlatformRequestMove = true;
         vp->PlatformRequestResize = true;
-        imui_request_frame(ctx);
+        imui::request_frame(ctx);
     }
 }
 
-void imui_frame(imui_context* ctx)
+void imui::frame(imui::Context* ctx)
 {
     if (!ctx->frames_requested) return;
     ctx->frames_requested--;
@@ -361,7 +361,7 @@ void imui_frame(imui_context* ctx)
     io.DisplaySize = {};
 
     reset_frame_textures(ctx);
-    io.Fonts->SetTexID(imui_get_texture(ctx, ctx->font_image.get(), ctx->sampler.get(),
+    io.Fonts->SetTexID(imui::get_texture(ctx, ctx->font_image.get(), ctx->sampler.get(),
                                         gpu::BlendMode::postmultiplied));
 
     ImGui::NewFrame();
@@ -389,17 +389,17 @@ void imui_frame(imui_context* ctx)
 // -----------------------------------------------------------------------------
 
 static
-void handle_reposition(imui_context* ctx, scene::Window* window, rect2f32 frame)
+void handle_reposition(imui::Context* ctx, scene::Window* window, rect2f32 frame)
 {
     if (auto* vp = find_viewport_for_window(window)) {
         get_data(vp)->reposition = frame;
-        imui_request_frame(ctx);
+        imui::request_frame(ctx);
     }
 }
 
-auto imui_create(gpu::Context* gpu, scene::Context* scene) -> core::Ref<imui_context>
+auto imui::create(gpu::Context* gpu, scene::Context* scene) -> core::Ref<imui::Context>
 {
-    auto ctx = core::create<imui_context>();
+    auto ctx = core::create<imui::Context>();
     ctx->scene   = scene;
     ctx->gpu     = gpu;
     ctx->sampler = gpu::sampler::create(ctx->gpu, {
@@ -408,32 +408,32 @@ auto imui_create(gpu::Context* gpu, scene::Context* scene) -> core::Ref<imui_con
     });
     ctx->client  = scene::client::create(scene);
 
-    imui_init(ctx.get());
+    imui::init(ctx.get());
 
     scene::client::set_event_handler(ctx->client.get(), [ctx = ctx.get()](scene::Event* event) {
         ImGui::SetCurrentContext(ctx->context);
         switch (event->type) {
             // keyboard
             break;case scene::EventType::keyboard_enter:
-                imui_handle_keyboard_enter(ctx, event->keyboard.keyboard, event->keyboard.focus.region);
+                imui::handle_keyboard_enter(ctx, event->keyboard.keyboard, event->keyboard.focus.region);
             break;case scene::EventType::keyboard_leave:
-                imui_handle_keyboard_leave(ctx);
+                imui::handle_keyboard_leave(ctx);
             break;case scene::EventType::keyboard_key:
-                imui_handle_key(ctx, event->keyboard.key.code, event->keyboard.key.pressed);
+                imui::handle_key(ctx, event->keyboard.key.code, event->keyboard.key.pressed);
             break;case scene::EventType::keyboard_modifier:
-                imui_handle_mods(ctx);
+                imui::handle_mods(ctx);
 
             // pointer
             break;case scene::EventType::pointer_enter:
-                imui_handle_pointer_enter(ctx, event->pointer.pointer, event->pointer.focus.region);
+                imui::handle_pointer_enter(ctx, event->pointer.pointer, event->pointer.focus.region);
             break;case scene::EventType::pointer_leave:
-                imui_handle_pointer_leave(ctx);
+                imui::handle_pointer_leave(ctx);
             break;case scene::EventType::pointer_motion:
-                imui_handle_motion(ctx);
+                imui::handle_motion(ctx);
             break;case scene::EventType::pointer_button:
-                imui_handle_button(ctx, event->pointer.button.code, event->pointer.button.pressed);
+                imui::handle_button(ctx, event->pointer.button.code, event->pointer.button.pressed);
             break;case scene::EventType::pointer_scroll:
-                imui_handle_wheel(ctx, event->pointer.scroll.delta);
+                imui::handle_wheel(ctx, event->pointer.scroll.delta);
 
             // window
             break;case scene::EventType::window_reposition:
@@ -446,9 +446,9 @@ auto imui_create(gpu::Context* gpu, scene::Context* scene) -> core::Ref<imui_con
                   case scene::EventType::output_frame_request:
                 ;
             break;case scene::EventType::output_frame:
-                imui_frame(ctx);
+                imui::frame(ctx);
             break;case scene::EventType::output_layout:
-                imui_handle_output_layout(ctx);
+                imui::handle_output_layout(ctx);
 
             // hotkey
             break;case scene::EventType::hotkey:
@@ -463,14 +463,14 @@ auto imui_create(gpu::Context* gpu, scene::Context* scene) -> core::Ref<imui_con
     return ctx;
 }
 
-void imui_add_frame_handler(imui_context* ctx, std::move_only_function<imui_frame_fn>&& handler)
+void imui::add_frame_handler(imui::Context* ctx, std::move_only_function<imui::FrameFn>&& handler)
 {
     ctx->frame_handlers.emplace_back(std::move(handler));
 }
 
 // -----------------------------------------------------------------------------
 
-void imui_handle_keyboard_enter(imui_context* ctx, scene::Keyboard* keyboard, scene::InputRegion* region)
+void imui::handle_keyboard_enter(imui::Context* ctx, scene::Keyboard* keyboard, scene::InputRegion* region)
 {
     ctx->keyboard = keyboard;
 
@@ -481,30 +481,30 @@ void imui_handle_keyboard_enter(imui_context* ctx, scene::Keyboard* keyboard, sc
     auto& io = ImGui::GetIO();
     io.AddFocusEvent(true);
 
-    imui_request_frame(ctx);
+    imui::request_frame(ctx);
 }
 
-void imui_handle_keyboard_leave(imui_context* ctx)
+void imui::handle_keyboard_leave(imui::Context* ctx)
 {
     ctx->keyboard = nullptr;
 
     auto& io = ImGui::GetIO();
     io.AddFocusEvent(false);
 
-    imui_request_frame(ctx);
+    imui::request_frame(ctx);
 }
 
-void imui_handle_key(imui_context* ctx, scene::Scancode code, bool pressed)
+void imui::handle_key(imui::Context* ctx, scene::Scancode code, bool pressed)
 {
     auto& io = ImGui::GetIO();
 
     io.AddKeyEvent(imgui_key_from_xkb_sym(scene::keyboard::get_sym(ctx->keyboard, code)), pressed);
     if (pressed) io.AddInputCharactersUTF8(scene::keyboard::get_utf8(ctx->keyboard, code).c_str());
 
-    imui_request_frame(ctx);
+    imui::request_frame(ctx);
 }
 
-void imui_handle_mods(imui_context* ctx)
+void imui::handle_mods(imui::Context* ctx)
 {
     auto& io = ImGui::GetIO();
 
@@ -515,20 +515,20 @@ void imui_handle_mods(imui_context* ctx)
     io.AddKeyEvent(ImGuiMod_Alt,   mods.contains(scene::Modifier::alt));
     io.AddKeyEvent(ImGuiMod_Super, mods.contains(scene::Modifier::super));
 
-    imui_request_frame(ctx);
+    imui::request_frame(ctx);
 }
 
-void imui_handle_motion(imui_context* ctx)
+void imui::handle_motion(imui::Context* ctx)
 {
     auto& io = ImGui::GetIO();
 
     auto pos = scene::pointer::get_position(ctx->pointer);
     io.AddMousePosEvent(pos.x, pos.y);
 
-    imui_request_frame(ctx);
+    imui::request_frame(ctx);
 }
 
-void imui_handle_button(imui_context* ctx, scene::Scancode code, bool pressed)
+void imui::handle_button(imui::Context* ctx, scene::Scancode code, bool pressed)
 {
     auto& io = ImGui::GetIO();
 
@@ -541,18 +541,18 @@ void imui_handle_button(imui_context* ctx, scene::Scancode code, bool pressed)
 
     if (!handled) return;
 
-    imui_request_frame(ctx);
+    imui::request_frame(ctx);
 }
 
-void imui_handle_wheel(imui_context* ctx, vec2f32 delta)
+void imui::handle_wheel(imui::Context* ctx, vec2f32 delta)
 {
     auto& io = ImGui::GetIO();
 
     io.AddMouseWheelEvent(delta.x, -delta.y);
-    imui_request_frame(ctx);
+    imui::request_frame(ctx);
 }
 
-void imui_handle_pointer_enter(imui_context* ctx, scene::Pointer* pointer, scene::InputRegion* region)
+void imui::handle_pointer_enter(imui::Context* ctx, scene::Pointer* pointer, scene::InputRegion* region)
 {
     ctx->pointer = pointer;
 
@@ -565,10 +565,10 @@ void imui_handle_pointer_enter(imui_context* ctx, scene::Pointer* pointer, scene
     auto pos = scene::pointer::get_position(pointer);
     io.AddMousePosEvent(pos.x, pos.y);
 
-    imui_request_frame(ctx);
+    imui::request_frame(ctx);
 }
 
-void imui_handle_pointer_leave(imui_context* ctx)
+void imui::handle_pointer_leave(imui::Context* ctx)
 {
     auto& io = ImGui::GetIO();
 
@@ -576,15 +576,15 @@ void imui_handle_pointer_leave(imui_context* ctx)
     io.AddMousePosEvent(-FLT_MAX,-FLT_MAX);
 
     for (auto code : scene::pointer::get_pressed(ctx->pointer)) {
-        imui_handle_button(ctx, code, false);
+        imui::handle_button(ctx, code, false);
     }
 
     ctx->pointer = nullptr;
 
-    imui_request_frame(ctx);
+    imui::request_frame(ctx);
 }
 
-void imui_handle_output_layout(imui_context* ctx)
+void imui::handle_output_layout(imui::Context* ctx)
 {
     auto& platform_io = ImGui::GetPlatformIO();
 
@@ -599,7 +599,7 @@ void imui_handle_output_layout(imui_context* ctx)
         platform_io.Monitors.push_back(monitor);
     }
 
-    imui_request_frame(ctx);
+    imui::request_frame(ctx);
 }
 
 // -----------------------------------------------------------------------------

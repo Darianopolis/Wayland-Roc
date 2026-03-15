@@ -2,24 +2,27 @@
 
 #include "scene/scene.hpp"
 
-struct imui_context;
-
-auto imui_create(gpu::Context*, scene::Context*) -> core::Ref<imui_context>;
-
-// -----------------------------------------------------------------------------
-
-using imui_frame_fn = void();
-
-void imui_request_frame(imui_context*);
-void imui_add_frame_handler(imui_context*, std::move_only_function<imui_frame_fn>&&);
-auto imui_get_texture(imui_context*, gpu::Image*, gpu::Sampler*, gpu::BlendMode) -> ImTextureID;
-
-auto imui_get_window(ImGuiWindow*) -> scene::Window*;
-
-// -----------------------------------------------------------------------------
-
-template<typename ...Args>
-void imui_text(std::format_string<Args...> fmt, Args&&... args)
+namespace imui
 {
-    ImGui::TextUnformatted(std::vformat(fmt.get(), std::make_format_args(args...)).c_str());
+    struct Context;
+
+    auto create(gpu::Context*, scene::Context*) -> core::Ref<imui::Context>;
+
+// -----------------------------------------------------------------------------
+
+    using FrameFn = void();
+
+    void request_frame(imui::Context*);
+    void add_frame_handler(imui::Context*, std::move_only_function<imui::FrameFn>&&);
+    auto get_texture(imui::Context*, gpu::Image*, gpu::Sampler*, gpu::BlendMode) -> ImTextureID;
+
+    auto get_window(ImGuiWindow*) -> scene::Window*;
+
+// -----------------------------------------------------------------------------
+
+    template<typename ...Args>
+    void text(std::format_string<Args...> fmt, Args&&... args)
+    {
+        ImGui::TextUnformatted(std::vformat(fmt.get(), std::make_format_args(args...)).c_str());
+    }
 }

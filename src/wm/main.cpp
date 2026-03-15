@@ -250,8 +250,8 @@ int main()
     // ImGui
 
     std::string imui_text_edit = "Hello, world!";
-    auto imui = imui_create(gpu.get(), scene.get());
-    imui_add_frame_handler(imui.get(), [&] {
+    auto imui = imui::create(gpu.get(), scene.get());
+    imui::add_frame_handler(imui.get(), [&] {
         ImGui::ShowDemoWindow();
 
         defer { ImGui::End(); };
@@ -261,7 +261,7 @@ int main()
             }
 
             if (ImGui::Button("Reposition")) {
-                if (auto* window = imui_get_window(ImGui::GetCurrentWindow())) {
+                if (auto* window = imui::get_window(ImGui::GetCurrentWindow())) {
                     scene::window::request_reposition(window, {{}, {512, 512}, core::xywh}, {});
                 }
             }
@@ -318,7 +318,7 @@ int main()
             ImGui::InputText("Text", &imui_text_edit);
         }
     });
-    imui_request_frame(imui.get());
+    imui::request_frame(imui.get());
 
     // Hotkey
 
