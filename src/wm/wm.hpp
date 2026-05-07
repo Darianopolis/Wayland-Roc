@@ -155,6 +155,8 @@ auto wm_surface_create(WmClient*) -> Ref<WmSurface>;
 
 void wm_surface_set_parent(WmSurface*, WmSurface* parent);
 
+auto wm_surface_contains_focus(WmSurface*, SeatFocus*) -> bool;
+
 // -----------------------------------------------------------------------------
 
 auto wm_window_create(WmSurface*) -> Ref<WmWindow>;

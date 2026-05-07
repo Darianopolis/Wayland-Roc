@@ -42,5 +42,15 @@ void wm_surface_set_parent(WmSurface* surface, WmSurface* parent)
     surface->parent = parent;
     parent->children.emplace_back(surface);
 
-    seat_focus_set_parent(surface->focus.get(), parent->focus.get());
+    // Place into parent's surface stack
+    scene_tree_place_above(parent->tree.get(), nullptr, surface->tree.get());
+}
+
+auto wm_surface_contains_focus(WmSurface* surface, SeatFocus* focus) -> bool
+{
+    if (surface->focus.get() == focus) return true;
+    for (auto* child : surface->children) {
+        if (wm_surface_contains_focus(child, focus)) return true;
+    }
+    return false;
 }

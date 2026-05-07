@@ -290,10 +290,7 @@ void way_get_popup(wl_client* client, wl_resource* resource, u32 id, wl_resource
     auto* parent = way_get_userdata<WayXdgSurface>(wl_parent)->surface;
     surface->parent = parent;
 
-    seat_focus_set_parent(surface->surface->focus.get(), parent->surface->focus.get());
-
-    // Place into parent's surface stack
-    scene_tree_place_above(parent->surface->tree.get(), nullptr, surface->surface->tree.get());
+    wm_surface_set_parent(surface->surface.get(), parent->surface.get());
 
     position(surface, way_get_userdata<WayPositioner>(positioner)->rules);
 }

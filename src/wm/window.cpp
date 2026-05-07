@@ -209,17 +209,14 @@ auto wm_window_is_focused(WmWindow* window) -> bool
     auto* wm = window->client->wm;
     return std::ranges::any_of(wm->seats, [&](auto* seat) {
         auto* focus = seat_keyboard_get_focus(seat_get_keyboard(seat));
-        if (seat_focus_contains(window->surface->focus.get(), focus)) {
-            return true;
-        }
-        return false;
+        return wm_surface_contains_focus(window->surface, focus);
     });;
 }
 
 auto wm_find_window_for(WmServer* wm, SeatFocus* focus) -> WmWindow*
 {
     for (auto* window : wm->windows) {
-        if (seat_focus_contains(window->surface->focus.get(), focus)) {
+        if (wm_surface_contains_focus(window->surface, focus)) {
             return window;
         }
     }

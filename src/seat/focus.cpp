@@ -17,14 +17,6 @@ SeatFocus::~SeatFocus()
     }
 
     std::erase(client->foci, this);
-
-    if (parent) {
-        std::erase(parent->children, this);
-    }
-
-    for (auto* child : children) {
-        child->parent = nullptr;
-    }
 }
 
 auto seat_focus_create(SeatClient* client, SceneInputRegion* input_region) -> Ref<SeatFocus>
@@ -36,28 +28,6 @@ auto seat_focus_create(SeatClient* client, SceneInputRegion* input_region) -> Re
     client->foci.emplace_back(focus.get());
 
     return focus;
-}
-
-void seat_focus_set_parent(SeatFocus* child, SeatFocus* parent)
-{
-    if (child->parent == parent) return;
-    if (child->parent) {
-        std::erase(child->parent->children, child);
-    }
-    child->parent = parent;
-    if (parent) {
-        parent->children.emplace_back(child);
-    }
-}
-
-auto seat_focus_contains(SeatFocus* focus, SeatFocus* target) -> bool
-{
-    if (!focus) return false;
-    if (focus == target) return true;
-    for (auto* child : focus->children) {
-        if (seat_focus_contains(child, target)) return true;
-    }
-    return false;
 }
 
 auto seat_find_focus_for_input_region(SeatManager* manager, SceneInputRegion* input_region) -> SeatFocus*
