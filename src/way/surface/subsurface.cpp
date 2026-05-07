@@ -26,7 +26,7 @@ void get_subsurface(wl_client* client, wl_resource* resource, u32 id, wl_resourc
     auto* parent = way_get_userdata<WaySurface>(wl_parent);
     surface->parent = parent;
 
-    seat_focus_set_parent(surface->scene.focus.get(), parent->scene.focus.get());
+    wm_surface_set_parent(surface->surface.get(), parent->surface.get());
 
     // Subsurfaces start synchronized
     surface->subsurface->synchronized = true;
@@ -150,22 +150,22 @@ void WaySurfaceTree::apply(WayCommitId id)
     if (!from) return;
 
     for (auto& move : from->moves) {
-        scene_tree_set_translation(move.surface->scene.tree.get(), move.position);
+        scene_tree_set_translation(move.surface->surface->tree.get(), move.position);
     }
     from->moves.clear();
 
     for (auto& place : from->places) {
-        auto* reference = place.reference ? place.reference->scene.tree.get() : nullptr;
+        auto* reference = place.reference ? place.reference->surface->tree.get() : nullptr;
         if (place.above) {
             scene_tree_place_above(
-                surface->scene.tree.get(),
+                surface->surface->tree.get(),
                 reference,
-                place.surface->scene.tree.get());
+                place.surface->surface->tree.get());
         } else {
             scene_tree_place_below(
-                surface->scene.tree.get(),
+                surface->surface->tree.get(),
                 reference,
-                place.surface->scene.tree.get());
+                place.surface->surface->tree.get());
         }
     }
     from->places.clear();

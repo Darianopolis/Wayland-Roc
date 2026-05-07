@@ -9,6 +9,7 @@ struct Gpu;
 struct IoContext;
 
 struct WmServer;
+struct WmSurface;
 struct WmWindow;
 struct WmPointerConstraint;
 
@@ -134,9 +135,29 @@ auto wm_get_seat_client(WmClient*) -> SeatClient*;
 
 // -----------------------------------------------------------------------------
 
-auto wm_window_create(WmClient*) -> Ref<WmWindow>;
+struct WmSurface
+{
+    WmClient* client;
 
-void wm_window_set_focus(WmWindow*, SeatFocus*);
+    WmSurface* parent;
+
+    std::vector<WmSurface*> children;
+
+    Ref<SceneTree> tree;
+    Ref<SceneTexture> texture;
+    Ref<SceneInputRegion> input_region;
+    Ref<SeatFocus> focus;
+
+    ~WmSurface();
+};
+
+auto wm_surface_create(WmClient*) -> Ref<WmSurface>;
+
+void wm_surface_set_parent(WmSurface*, WmSurface* parent);
+
+// -----------------------------------------------------------------------------
+
+auto wm_window_create(WmSurface*) -> Ref<WmWindow>;
 
 void wm_window_set_title(WmWindow*, std::string_view title);
 void wm_window_set_app_id(WmWindow*, std::string_view app_id);
@@ -144,8 +165,6 @@ void wm_window_set_app_id(WmWindow*, std::string_view app_id);
 void wm_window_map(  WmWindow*);
 void wm_window_unmap(WmWindow*);
 void wm_window_raise(WmWindow*);
-
-auto wm_window_get_tree(WmWindow*) -> SceneTree*;
 
 void wm_window_request_reposition(WmWindow*, rect2f32 frame, vec2f32 gravity);
 void wm_window_request_close(     WmWindow*);

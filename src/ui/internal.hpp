@@ -3,10 +3,9 @@
 #include "ui.hpp"
 
 struct UiViewportData {
+    Ref<WmSurface> surface;
     Ref<WmWindow> window;
     RefVector<SceneMesh> meshes;
-    Ref<SceneInputRegion> input_region;
-    Ref<SeatFocus> focus;
 
     rect2f32 frame;
 };

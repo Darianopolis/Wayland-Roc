@@ -13,7 +13,7 @@ auto find_surface(WayClient* client, SeatFocus* focus) -> WaySurface*
     if (!focus) return nullptr;
     if (focus->client != wm_get_seat_client(client->wm.get())) return nullptr;
     for (auto* surface : client->surfaces) {
-        if (surface->scene.focus.get() == focus) return surface;
+        if (surface->surface->focus.get() == focus) return surface;
     }
     return nullptr;
 }

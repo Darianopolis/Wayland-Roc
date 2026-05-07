@@ -19,12 +19,13 @@ static constexpr vec2f32 border_size    = vec2f32(2);
 static constexpr auto    border_normal  = color_from_hex("#4C4C4C");
 static constexpr auto    border_focused = color_from_hex("#6666FF");
 
-auto wm_window_create(WmClient* client) -> Ref<WmWindow>
+auto wm_window_create(WmSurface* surface) -> Ref<WmWindow>
 {
-    auto* wm = client->wm;
+    auto* wm = surface->client->wm;
 
     auto window = ref_create<WmWindow>();
-    window->client = client;
+    window->client = surface->client;
+    window->surface = surface;
 
     wm->windows.emplace_back(window.get());
 
@@ -35,8 +36,7 @@ auto wm_window_create(WmClient* client) -> Ref<WmWindow>
     scene_tree_place_above(window->root_tree.get(), nullptr, window->borders.get());
     scene_texture_set_tint(window->borders.get(), border_normal);
 
-    window->client_tree = scene_tree_create();
-    scene_tree_place_above(window->root_tree.get(), nullptr, window->client_tree.get());
+    scene_tree_place_above(window->root_tree.get(), nullptr, surface->tree.get());
 
     wm_window_post_event(ptr_to(WmWindowEvent {
         .type = WmEventType::window_created,
@@ -44,11 +44,6 @@ auto wm_window_create(WmClient* client) -> Ref<WmWindow>
     }));
 
     return window;
-}
-
-auto wm_window_get_tree(WmWindow* window) -> SceneTree*
-{
-    return window->client_tree.get();
 }
 
 void wm_window_set_title(WmWindow* window, std::string_view title)
@@ -198,18 +193,13 @@ auto wm_find_window_at(WmServer* wm, vec2f32 point) -> WmWindow*
 
 // -----------------------------------------------------------------------------
 
-void wm_window_set_focus(WmWindow* window, SeatFocus* focus)
-{
-    window->focus = focus;
-}
-
 void wm_window_focus(WmWindow* window)
 {
     auto* wm = window->client->wm;
 
     auto* keyboard = seat_get_keyboard(wm_get_seat(wm));
     if (keyboard) {
-        seat_keyboard_focus(keyboard, window->focus.get());
+        seat_keyboard_focus(keyboard, window->surface->focus.get());
     }
     wm_window_raise(window);
 }
@@ -219,7 +209,7 @@ auto wm_window_is_focused(WmWindow* window) -> bool
     auto* wm = window->client->wm;
     return std::ranges::any_of(wm->seats, [&](auto* seat) {
         auto* focus = seat_keyboard_get_focus(seat_get_keyboard(seat));
-        if (seat_focus_contains(window->focus.get(), focus)) {
+        if (seat_focus_contains(window->surface->focus.get(), focus)) {
             return true;
         }
         return false;
@@ -229,7 +219,7 @@ auto wm_window_is_focused(WmWindow* window) -> bool
 auto wm_find_window_for(WmServer* wm, SeatFocus* focus) -> WmWindow*
 {
     for (auto* window : wm->windows) {
-        if (seat_focus_contains(window->focus.get(), focus)) {
+        if (seat_focus_contains(window->surface->focus.get(), focus)) {
             return window;
         }
     }

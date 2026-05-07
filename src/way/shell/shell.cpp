@@ -64,10 +64,7 @@ void get_toplevel(wl_client* client, wl_resource* resource, u32 id)
 
     toplevel->resource = way_resource_create_refcounted(xdg_toplevel, client, resource, id, toplevel.get());
 
-    toplevel->window = wm_window_create(surface->client->wm.get());
-    wm_window_set_focus(toplevel->window.get(), surface->scene.focus.get());
-
-    scene_tree_place_above(wm_window_get_tree(toplevel->window.get()), nullptr, surface->scene.tree.get());
+    toplevel->window = wm_window_create(surface->surface.get());
 }
 
 static
@@ -154,7 +151,7 @@ void way_toplevel_on_map_change(WaySurface* surface, bool mapped)
     if (mapped) {
         wm_window_map(toplevel->window.get());
         for (auto* seat : wm_get_seats(surface->client->server->wm)) {
-            seat_keyboard_focus(seat_get_keyboard(seat), surface->scene.focus.get());
+            seat_keyboard_focus(seat_get_keyboard(seat), surface->surface->focus.get());
         }
     } else {
         wm_window_unmap(toplevel->window.get());
@@ -188,7 +185,7 @@ void reposition(WaySurface* surface)
     frame.origin -= rel * (extent - anchor.extent);
 
     wm_window_set_frame(toplevel->window.get(), frame);
-    scene_tree_set_translation(surface->scene.tree.get(), -xdg->current.geometry.origin);
+    scene_tree_set_translation(surface->surface->tree.get(), -xdg->current.geometry.origin);
 }
 
 void way_toplevel_on_reposition(WaySurface* surface, rect2f32 frame, vec2f32 gravity)

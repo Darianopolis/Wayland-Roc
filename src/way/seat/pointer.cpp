@@ -17,18 +17,18 @@ void set_cursor(wl_client* wl_client, wl_resource* resource, u32 serial, wl_reso
     auto* surface = wl_surface ? way_get_userdata<WaySurface>(wl_surface) : nullptr;
 
     if (surface) {
-        scene_tree_set_translation(surface->scene.tree.get(), {-hot_x, -hot_y});
+        scene_tree_set_translation(surface->surface->tree.get(), {-hot_x, -hot_y});
 
         if (surface->role != WaySurfaceRole::cursor) {
             surface->role = WaySurfaceRole::cursor;
             surface->cursor_role = ref_create<WayCursorSurface>();
             way_surface_addon_register(surface, surface->cursor_role.get());
-            scene_node_unparent(surface->scene.input_region.get());
+            scene_node_unparent(surface->surface->input_region.get());
         }
     }
 
     if (seat->pointer) {
-        seat_pointer_set_cursor(seat->pointer, surface ? surface->scene.tree.get() : nullptr);
+        seat_pointer_set_cursor(seat->pointer, surface ? surface->surface->tree.get() : nullptr);
     }
 }
 
@@ -48,7 +48,7 @@ auto to_fixed(vec2f32 v) -> Vec<2, wl_fixed_t>
 static
 auto to_surface_pos(WaySurface* surface, vec2f32 global_pos)
 {
-    return global_pos - scene_tree_get_position(surface->scene.tree.get());
+    return global_pos - scene_tree_get_position(surface->surface->tree.get());
 }
 
 static
@@ -198,8 +198,8 @@ void way_seat_on_scroll(WayClientSeat* client_seat, SeatEvent* event)
 void WayCursorSurface::apply(WayCommitId)
 {
     if (surface->current.surface.offset != vec2i32{}) {
-        scene_tree_set_translation(surface->scene.tree.get(),
-            surface->scene.tree->translation + vec2f32(surface->current.surface.offset));
+        scene_tree_set_translation(surface->surface->tree.get(),
+            surface->surface->tree->translation + vec2f32(surface->current.surface.offset));
 
         surface->current.surface.offset = {};
     }

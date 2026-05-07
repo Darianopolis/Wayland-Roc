@@ -50,7 +50,7 @@ void constrain_pointer(
 
     constraint->constraint = wm_constrain_pointer(
         root->toplevel->window.get(),
-        surface->scene.input_region.get(),
+        surface->surface->input_region.get(),
         region
             ? region->region
             : region2f32{way_infinite_aabb},

@@ -143,6 +143,7 @@ struct WmClient
 struct WmWindow
 {
     WmClient* client;
+    WmSurface* surface;
 
     vec2f32 extent;
     bool mapped;
@@ -151,11 +152,8 @@ struct WmWindow
     std::string title;
 
     Ref<SceneTree> root_tree;
-    Ref<SceneTree> client_tree;
 
     Ref<SceneTexture> borders;
-
-    Weak<SeatFocus> focus;
 
     ~WmWindow();
 };

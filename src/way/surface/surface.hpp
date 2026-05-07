@@ -102,13 +102,7 @@ struct WaySurface
     std::deque<Ref<WaySurfaceState>> cached;
     WaySurfaceState current;
 
-    // scene
-    struct {
-        Ref<SceneTree>        tree;
-        Ref<SceneTexture>     texture;
-        Ref<SceneInputRegion> input_region;
-        Ref<SeatFocus>        focus;
-    } scene;
+    Ref<WmSurface> surface;
 
     bool mapped;
 

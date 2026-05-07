@@ -239,7 +239,7 @@ void popup_update_geometry(WaySurface* surface)
     auto position    = surface->popup->position;
     auto geom        = surface->xdg->current.geometry;
     auto parent_geom = surface->parent->xdg->current.geometry;
-    scene_tree_set_translation(surface->scene.tree.get(),
+    scene_tree_set_translation(surface->surface->tree.get(),
         position + vec2f32(parent_geom.origin) - vec2f32(geom.origin));
 }
 
@@ -255,7 +255,7 @@ void position(WaySurface* surface, const WayPositionerRules& rules, std::optiona
         auto point = vec2f32(anchor.origin) + vec2f32(anchor.extent) * 0.5f;
         if (auto* output = wm_find_output_at(server->wm, point).output) {
             aabb2f32 vp = wm_output_get_viewport(output);
-            auto translation = scene_tree_get_position(surface->parent->scene.tree.get());
+            auto translation = scene_tree_get_position(surface->parent->surface->tree.get());
             constraint = {
                 vp.min - translation,
                 vp.max - translation,
@@ -290,10 +290,10 @@ void way_get_popup(wl_client* client, wl_resource* resource, u32 id, wl_resource
     auto* parent = way_get_userdata<WayXdgSurface>(wl_parent)->surface;
     surface->parent = parent;
 
-    seat_focus_set_parent(surface->scene.focus.get(), parent->scene.focus.get());
+    seat_focus_set_parent(surface->surface->focus.get(), parent->surface->focus.get());
 
     // Place into parent's surface stack
-    scene_tree_place_above(parent->scene.tree.get(), nullptr, surface->scene.tree.get());
+    scene_tree_place_above(parent->surface->tree.get(), nullptr, surface->surface->tree.get());
 
     position(surface, way_get_userdata<WayPositioner>(positioner)->rules);
 }

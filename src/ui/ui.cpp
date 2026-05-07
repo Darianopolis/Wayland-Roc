@@ -53,7 +53,7 @@ static
 auto find_viewport_for_focus(Ui* ui, SeatFocus* focus) -> ImGuiViewport*
 {
     for (auto* vp : get_viewports()) {
-        if (auto* data = get_data(vp); data && data->focus.get() == focus) {
+        if (auto* data = get_data(vp); data && data->surface->focus.get() == focus) {
             return vp;
         }
     }
@@ -109,12 +109,8 @@ void Platform_CreateWindow(ImGuiViewport* vp)
     auto* ui = get_context();
     auto* data = new UiViewportData();
 
-    data->window = wm_window_create(ui->client.get());
-
-    data->input_region = scene_input_region_create();
-    data->focus = seat_focus_create(wm_get_seat_client(ui->client.get()), data->input_region.get());
-    wm_window_set_focus(data->window.get(), data->focus.get());
-    scene_tree_place_above(wm_window_get_tree(data->window.get()), nullptr, data->input_region.get());
+    data->surface = wm_surface_create(ui->client.get());
+    data->window = wm_window_create(data->surface.get());
 
     vp->PlatformUserData = data;
 }
@@ -134,7 +130,7 @@ void Platform_ShowWindow(ImGuiViewport* vp)
 
     wm_window_map(data->window.get());
     for (auto* seat : wm_get_seats(ui->wm)) {
-        seat_keyboard_focus(seat_get_keyboard(seat), data->focus.get());
+        seat_keyboard_focus(seat_get_keyboard(seat), data->surface->focus.get());
     }
 }
 
@@ -357,7 +353,7 @@ void render_viewport(Ui* ui, ImGuiViewport* vp)
         while (lists > data->meshes.size()) {
             auto mesh = scene_mesh_create();
             data->meshes.emplace_back(mesh.get());
-            scene_tree_place_above(wm_window_get_tree(data->window.get()), nullptr, mesh.get());
+            scene_tree_place_above(data->surface->tree.get(), nullptr, mesh.get());
         }
         while (lists < data->meshes.size()) {
             data->meshes.pop_back();
@@ -405,7 +401,7 @@ void render_viewport(Ui* ui, ImGuiViewport* vp)
     {
         rect2f32 rect {translation, from_imvec(vp->Size), xywh};
         if (rect != wm_window_get_frame(data->window.get())) {
-            scene_input_region_set_clip(data->input_region.get(), {{}, rect.extent, xywh});
+            scene_input_region_set_clip(data->surface->input_region.get(), {{}, rect.extent, xywh});
             wm_window_set_frame(data->window.get(), rect);
         }
     }
