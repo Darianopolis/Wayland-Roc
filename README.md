@@ -92,7 +92,7 @@ An internal layer for writing in-process GUI clients.
 - ImGui multi-viewport backend
    - First-class window layout integration
 - Double-pumped event based frames
-- Lazy scene mesh damage on `ImDrawData` change
+- Lazy surface redraws on `ImDrawData` change
 
 ### `way` ─ Wayland Server
 

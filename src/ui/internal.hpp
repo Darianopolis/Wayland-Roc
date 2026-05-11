@@ -5,7 +5,6 @@
 struct UiViewportData {
     Ref<WmSurface> surface;
     Ref<WmWindow> window;
-    RefVector<SceneMesh> meshes;
 
     rect2f32 frame;
 };
@@ -21,6 +20,8 @@ struct Ui
 
     std::string ini_path;
 
+    Ref<GpuShader> vertex;
+    Ref<GpuShader> fragment;
     Ref<GpuSampler> sampler;
     ImGuiContext* context;
     u32 frames_requested = 0;

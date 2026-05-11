@@ -1,5 +1,10 @@
 #include "internal.hpp"
 
+#include <ui_render_frag.hpp>
+#include <ui_render_vert.hpp>
+
+#include "shader/render.h"
+
 #include <core/stack.hpp>
 
 thread_local ImGuiContext* ui_imgui_ctx;
@@ -346,53 +351,80 @@ void render_viewport(Ui* ui, ImGuiViewport* vp)
     if (!data || !vp->DrawData) return;
 
     auto translation = from_imvec(vp->Pos);
+    vec2u32 size = from_imvec(vp->Size);
 
-    if (usz lists = vp->DrawData->CmdListsCount; lists != data->meshes.size()) {
-        while (lists > data->meshes.size()) {
-            auto mesh = scene_mesh_create();
-            data->meshes.emplace_back(mesh.get());
-            scene_tree_place_above(data->surface->tree.get(), nullptr, mesh.get());
-        }
-        while (lists < data->meshes.size()) {
-            data->meshes.pop_back();
-        }
+    auto* texture = data->surface->texture.get();
+    if (!texture->image || texture->image->extent() != size) {
+        scene_texture_set_image(texture, gpu_image_create(ui->gpu, {
+            .extent = size,
+            .format = gpu_format_from_drm(DRM_FORMAT_ABGR8888),
+            .usage = GpuImageUsage::render | GpuImageUsage::texture | GpuImageUsage::transfer,
+        }).get(), ui->sampler.get(), GpuBlendMode::postmultiplied);
+        log_trace("Allocating new ImGui texture {}x{} - {}", size.x, size.y, FmtBytes(4 * size.x * size.y));
     }
 
-    for (auto[i, list] : to_span(vp->DrawData->CmdLists) | std::views::enumerate) {
+    scene_texture_set_dst(texture, {{}, size, xywh});
+    scene_texture_damage( texture, {{}, size, xywh});
 
-        // Require that ImDrawVert and SceneVertex are layout-compatible
-        static_assert(  sizeof(ImDrawVert)      ==   sizeof(SceneVertex));
-        static_assert(offsetof(ImDrawVert, pos) == offsetof(SceneVertex, pos));
-        static_assert(offsetof(ImDrawVert, col) == offsetof(SceneVertex, color));
-        static_assert(offsetof(ImDrawVert, uv)  == offsetof(SceneVertex, uv));
+    GpuArray<UiVertex>  vertices = {gpu_buffer_create(ui->gpu, vp->DrawData->TotalVtxCount * sizeof(UiVertex),  {}), 0};
+    GpuArray<ImDrawIdx> indices  = {gpu_buffer_create(ui->gpu, vp->DrawData->TotalIdxCount * sizeof(ImDrawIdx), {}), 0};
 
-        // Create segment list
-        std::vector<SceneMeshSegment> segments(list->CmdBuffer.size());
-        for (auto[j, cmd] : to_span(list->CmdBuffer) | std::views::enumerate) {
+    gpu_protect(ui->gpu, vertices.buffer.get());
+    gpu_protect(ui->gpu, indices.buffer.get());
 
-            auto& segment = segments[j];
+    u32 vertex_offset = 0;
+    u32 index_offset = 0;
 
-            segment.vertex_offset = cmd.VtxOffset;
-            segment.first_index = cmd.IdxOffset;
-            segment.index_count = cmd.ElemCount;
+    gpu_render(ui->gpu, {
+        .target = texture->image.get(),
+        .clear_color = {{0,0,0,1}},
+    }, [&](GpuRenderPass* pass) {
+        gpu_set_viewports(pass, {{{{}, size, xywh}}});
+        gpu_set_blend_state(pass, {{GpuBlendMode::postmultiplied}});
 
-            rect2f32 clip = {{cmd.ClipRect.x, cmd.ClipRect.y}, {cmd.ClipRect.z, cmd.ClipRect.w}, minmax};
-            clip.origin -= translation;
-            segment.clip = clip;
+        gpu_bind_shaders(pass, {{ui->vertex.get(), ui->fragment.get()}});
+        constexpr VkIndexType index_type = [] {
+            switch (sizeof(ImDrawIdx)) {
+                break;case 1: return VK_INDEX_TYPE_UINT8;
+                break;case 2: return VK_INDEX_TYPE_UINT16;
+                break;case 4: return VK_INDEX_TYPE_UINT32;
+            }
+        }();
+        gpu_bind_index_buffer(pass, indices.buffer.get(), 0, index_type);
 
-            auto[image, sampler, blend] = ui->textures[cmd.GetTexID()];
-            segment.image = image;
-            segment.sampler = sampler;
-            segment.blend = blend;
+        for (auto[i, list] : to_span(vp->DrawData->CmdLists) | std::views::enumerate) {
+
+            std::memcpy(vertices.host() + vertex_offset, list->VtxBuffer.Data, list->VtxBuffer.size_in_bytes());
+            std::memcpy(indices.host()  + index_offset,  list->IdxBuffer.Data, list->IdxBuffer.size_in_bytes());
+
+            for (auto[j, cmd] : to_span(list->CmdBuffer) | std::views::enumerate) {
+                rect2f32 clip = {{cmd.ClipRect.x, cmd.ClipRect.y}, {cmd.ClipRect.z, cmd.ClipRect.w}, minmax};
+                clip.origin -= translation;
+                gpu_set_scissors(pass, {{clip}});
+
+                auto[image, sampler, blend] = ui->textures[cmd.GetTexID()];
+                gpu_protect(ui->gpu, image.get());
+                gpu_protect(ui->gpu, sampler.get());
+                auto draw_scale = 2.f / vec2f32(size);
+                gpu_push_constants(pass, 0, view_bytes(UiRenderInput {
+                    .vertices = vertices.device(),
+                    .scale = draw_scale,
+                    .offset = vec2f32(-1.f) - (translation * draw_scale),
+                    .texture = {image.get(), sampler.get()},
+                }));
+
+                gpu_draw_indexed(pass, {
+                    .index_count = cmd.ElemCount,
+                    .instance_count = 1,
+                    .first_index = index_offset + cmd.IdxOffset,
+                    .vertex_offset = vertex_offset + cmd.VtxOffset,
+                });
+            }
+
+            vertex_offset += list->VtxBuffer.size();
+            index_offset += list->IdxBuffer.size();
         }
-
-        // Update mesh content
-        scene_mesh_update(data->meshes[i],
-            {reinterpret_cast<const SceneVertex*>(list->VtxBuffer.Data), usz(list->VtxBuffer.Size)},
-            to_span(list->IdxBuffer),
-            segments,
-            -translation);
-    }
+    });
 
     // Update visual frame
 
@@ -463,6 +495,19 @@ auto ui_create(Gpu* gpu, WmServer* wm, const std::filesystem::path& path) -> Ref
     ui->wm  = wm;
     ui->client = wm_connect(wm);
     ui->gpu = gpu;
+
+    ui->vertex   = gpu_shader_create(ui->gpu, {
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .code  = ui_render_vert,
+        .entry = "main",
+    });
+
+    ui->fragment = gpu_shader_create(ui->gpu, {
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .code  = ui_render_frag,
+        .entry = "main",
+    });
+
     ui->sampler = gpu_sampler_create(ui->gpu, {
         .mag = VK_FILTER_NEAREST,
         .min = VK_FILTER_LINEAR,

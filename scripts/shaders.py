@@ -4,6 +4,9 @@ def build_shaders(cwd, build_dir):
     shaders = [
         ("src/scene/shader/render.frag.glsl", "scene_render_frag", "frag"),
         ("src/scene/shader/render.vert.glsl", "scene_render_vert", "vert"),
+
+        ("src/ui/shader/render.frag.glsl", "ui_render_frag", "frag"),
+        ("src/ui/shader/render.vert.glsl", "ui_render_vert", "vert"),
     ]
 
     shader_gen_dir         = ensure_dir(build_dir / "shaders")
@@ -76,7 +79,9 @@ def build_shaders(cwd, build_dir):
 
         # C++ header
 
-        header_out  =  "#include <span>\n"
+        header_out  =  "#pragma once\n"
+        header_out +=  "\n"
+        header_out +=  "#include <span>\n"
         header_out +=  "#include <cstdint>\n"
         header_out +=  "\n"
         header_out += f"extern const std::span<const uint32_t> {prefix};\n"

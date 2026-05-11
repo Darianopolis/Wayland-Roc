@@ -241,7 +241,6 @@ init_library(scene)
 target_sources(scene PRIVATE
     src/scene/scene.cpp
     src/scene/render.cpp
-    src/scene/node/mesh.cpp
     src/scene/node/node.cpp
     src/scene/node/texture.cpp
     src/scene/node/tree.cpp
