@@ -24,7 +24,7 @@ auto get_keymap_file(xkb_keymap* keymap) -> WayKeymap
 
 void way_seat_keyboard_init(WaySeat* seat)
 {
-    auto& kb_info = seat_keyboard_get_info(seat_get_keyboard(seat->seat));
+    auto& kb_info = wm_keyboard_get_info(seat->seat);
     seat->keymap = get_keymap_file(kb_info.keymap);
 }
 
@@ -42,7 +42,7 @@ void way_seat_get_keyboard(wl_client* wl_client, wl_resource* resource, u32 id)
         WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1,
         seat->keymap.fd.get(), seat->keymap.size);
 
-    auto& kb_info = seat_keyboard_get_info(seat_get_keyboard(client_seat->seat->seat));
+    auto& kb_info = wm_keyboard_get_info(client_seat->seat->seat);
 
     if (wl_resource_get_version(kb) >= WL_KEYBOARD_REPEAT_INFO_SINCE_VERSION) {
         way_send<wl_keyboard_send_repeat_info>(kb, kb_info.rate, kb_info.delay);
@@ -63,7 +63,6 @@ void keyboard_leave(WayClientSeat* client_seat)
     auto* surface = seat->focus.keyboard.get();
     if (!surface) return;
 
-    seat->keyboard = nullptr;
     auto serial = way_next_serial(server);
 
     if (surface->resource) {
@@ -75,11 +74,10 @@ void keyboard_leave(WayClientSeat* client_seat)
         }
     }
 
-    debug_assert(seat->focus.keyboard.get() == surface, "Keyboard left surface that did not have focus");
     seat->focus.keyboard = nullptr;
 }
 
-void way_seat_on_keyboard_leave(WayClientSeat* client_seat, SeatEvent* event)
+void way_seat_on_keyboard_leave(WayClientSeat* client_seat, WmKeyboardEvent* event)
 {
     keyboard_leave(client_seat);
 }
@@ -99,7 +97,7 @@ void send_modifiers(WayClientSeat* client_seat)
     auto* server = seat->server;
 
     auto serial = way_next_serial(server);
-    auto kb = seat_keyboard_get_info(seat->keyboard);
+    auto& kb = wm_keyboard_get_info(seat->seat);
 
     for (auto* resource : client_seat->keyboards) {
         way_send<wl_keyboard_send_modifiers>(resource, serial.value,
@@ -110,12 +108,12 @@ void send_modifiers(WayClientSeat* client_seat)
     }
 }
 
-void way_seat_on_keyboard_enter(WayClientSeat* client_seat, SeatEvent* event)
+void way_seat_on_keyboard_enter(WayClientSeat* client_seat, WmKeyboardEvent* event)
 {
     auto* seat = client_seat->seat;
     auto* server = seat->server;
 
-    auto* surface = find_surface(client_seat->client, event->keyboard.focus);
+    auto* surface = find_surface(client_seat->client, event->focus);
 
     // xdg_popup and wl_subsurface cannot have keyboard focus
     surface = find_root_toplevel(surface);
@@ -128,12 +126,10 @@ void way_seat_on_keyboard_enter(WayClientSeat* client_seat, SeatEvent* event)
         wm_window_raise(surface->toplevel->window.get());
     }
 
-    seat->keyboard = event->keyboard.keyboard;
-
     auto serial = way_next_serial(server);
 
     if (surface->resource) {
-        auto pressed = way_from_span<const u32>(seat_keyboard_get_pressed(seat->keyboard));
+        auto pressed = way_from_span<const u32>(wm_keyboard_get_pressed(seat->seat));
         for (auto* resource : client_seat->keyboards) {
             way_send<wl_keyboard_send_enter>(resource, serial.value, surface->resource, &pressed);
         }
@@ -150,7 +146,7 @@ void way_seat_on_keyboard_enter(WayClientSeat* client_seat, SeatEvent* event)
 
 // -----------------------------------------------------------------------------
 
-void way_seat_on_key(WayClientSeat* client_seat, SeatEvent* event)
+void way_seat_on_key(WayClientSeat* client_seat, WmKeyboardEvent* event)
 {
     auto* seat = client_seat->seat;
     auto* server = seat->server;
@@ -158,7 +154,7 @@ void way_seat_on_key(WayClientSeat* client_seat, SeatEvent* event)
     auto serial = way_next_serial(server);
     auto elapsed = way_get_elapsed(server);
     u64 time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    auto key = event->keyboard.key;
+    auto& key = event->key;
     auto state = key.pressed ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED;
 
     for (auto* resource : client_seat->keyboards) {
@@ -166,7 +162,7 @@ void way_seat_on_key(WayClientSeat* client_seat, SeatEvent* event)
     }
 }
 
-void way_seat_on_modifier(WayClientSeat* client_seat, SeatEvent* event)
+void way_seat_on_modifier(WayClientSeat* client_seat, WmKeyboardEvent* event)
 {
     send_modifiers(client_seat);
 }

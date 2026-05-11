@@ -40,7 +40,7 @@ auto get_zone_rect(rect2i32 workarea, vec2i32 zone) -> rect2i32
 static
 void update_rectangle(WmServer* wm)
 {
-    bool show = wm->zone.pointer;
+    bool show = wm->zone.seat;
     bool selecting = wm->zone.selecting;
     auto rect = wm->zone.final_zone;
 
@@ -59,8 +59,8 @@ void update_rectangle(WmServer* wm)
 static
 void zone_update_regions(WmServer* wm)
 {
-    auto pointer = wm->zone.pointer;
-    vec2f64 point = seat_pointer_get_position(pointer);
+    auto pointer = wm->zone.seat;
+    vec2f64 point = wm_pointer_get_position(pointer);
 
     auto[output, position] = wm_find_output_at(wm, point);
 
@@ -116,13 +116,13 @@ void toggle_selecting(WmServer* wm)
 }
 
 static
-void begin_zone(WmServer* wm, SeatPointer* pointer)
+void begin_zone(WmServer* wm, WmSeat* seat)
 {
     wm->mode = WmInteractionMode::zone;
 
-    wm->zone.pointer = pointer;
+    wm->zone.seat = seat;
 
-    auto window = wm_find_window_at(wm, seat_pointer_get_position(pointer));
+    auto window = wm_find_window_at(wm, wm_pointer_get_position(seat));
     if (window) {
         wm->zone.window = window;
         if (is_interactable(window)) {
@@ -135,7 +135,7 @@ void begin_zone(WmServer* wm, SeatPointer* pointer)
 static
 void end_zone(WmServer* wm)
 {
-    wm->zone.pointer = nullptr;
+    wm->zone.seat = nullptr;
     update_rectangle(wm);
 
     wm->mode = WmInteractionMode::none;
@@ -149,25 +149,25 @@ void end_zone(WmServer* wm)
 }
 
 static
-auto filter_event_zone(WmServer* wm, SeatEvent* event) -> SeatEventFilterResult
+auto filter_event_zone(WmServer* wm, WmEvent* event) -> WmEventFilterResult
 {
     switch (event->type) {
-        break;case SeatEventType::pointer_motion:
-            if (event->pointer.pointer == wm->zone.pointer) zone_update_regions(wm);
-        break;case SeatEventType::pointer_button:
-            if (event->pointer.pointer == wm->zone.pointer) {
+        break;case WmEventType::pointer_motion:
+            if (event->pointer.seat == wm->zone.seat) zone_update_regions(wm);
+        break;case WmEventType::pointer_button:
+            if (event->pointer.seat == wm->zone.seat) {
                 if (event->pointer.button.pressed) {
                     if (event->pointer.button.code == BTN_RIGHT) {
                         toggle_selecting(wm);
                     }
-                    return SeatEventFilterResult::capture;
+                    return WmEventFilterResult::capture;
                 }
-                if (seat_pointer_get_pressed(wm->zone.pointer).empty()) {
+                if (wm_pointer_get_pressed(wm->zone.seat).empty()) {
                     end_zone(wm);
                 }
             }
-        break;case SeatEventType::pointer_scroll:
-            if (event->pointer.pointer == wm->zone.pointer) return SeatEventFilterResult::capture;
+        break;case WmEventType::pointer_scroll:
+            if (event->pointer.seat == wm->zone.seat) return WmEventFilterResult::capture;
         break;default:
             ;
     }
@@ -176,25 +176,25 @@ auto filter_event_zone(WmServer* wm, SeatEvent* event) -> SeatEventFilterResult
 }
 
 static
-auto filter_event_default(WmServer* wm, SeatEvent* event) -> SeatEventFilterResult
+auto filter_event_default(WmServer* wm, WmEvent* event) -> WmEventFilterResult
 {
-    if (event->type != SeatEventType::pointer_button) return {};
+    if (event->type != WmEventType::pointer_button) return {};
 
     auto button = event->pointer.button;
     if (!button.pressed) return {};
 
     if (button.code != BTN_LEFT) return {};
 
-    auto mods = seat_get_modifiers(seat_pointer_get_seat(event->pointer.pointer));
+    auto mods = wm_keyboard_get_modifiers(event->pointer.seat);
     if (!mods.contains(wm->main_mod)) return {};
-    if (mods.contains(SeatModifier::shift)) return {}; // Avoid conflicts with movesize interaction
+    if (mods.contains(WmModifier::shift)) return {}; // Avoid conflicts with movesize interaction
 
-    begin_zone(wm, event->pointer.pointer);
-    return SeatEventFilterResult::capture;
+    begin_zone(wm, event->pointer.seat);
+    return WmEventFilterResult::capture;
 }
 
 static
-auto filter_event(WmServer* wm, SeatEvent* event) -> SeatEventFilterResult
+auto filter_event(WmServer* wm, WmEvent* event) -> WmEventFilterResult
 {
     switch (wm->mode) {
         break;case WmInteractionMode::none:
@@ -205,7 +205,7 @@ auto filter_event(WmServer* wm, SeatEvent* event) -> SeatEventFilterResult
             ;
     }
 
-    return SeatEventFilterResult::passthrough;
+    return WmEventFilterResult::passthrough;
 }
 
 // -----------------------------------------------------------------------------
@@ -213,7 +213,7 @@ auto filter_event(WmServer* wm, SeatEvent* event) -> SeatEventFilterResult
 void wm_init_zone(WmServer* wm)
 {
     wm->zone.texture = scene_texture_create();
-    wm->zone.filter = seat_add_event_filter(wm_get_seat(wm), [wm](SeatEvent* event) {
+    wm_add_event_filter(wm, [wm](WmEvent* event) {
         return filter_event(wm, event);
     });
 }

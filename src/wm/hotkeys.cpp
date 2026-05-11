@@ -1,41 +1,43 @@
+
 #include "internal.hpp"
 
 static
-auto close_focused(WmServer* wm, Seat* seat, SeatFocus* focus) -> SeatEventFilterResult
+auto close_focused(WmServer* wm, WmSeat* seat, WmSurface* focus) -> WmEventFilterResult
 {
-    auto mods = seat_get_modifiers(seat);
+    auto mods = wm_keyboard_get_modifiers(seat);
     if (!mods.contains(wm->main_mod)) return {};
 
-    WmWindow* window;
-    if (focus && (window = wm_find_window_for(wm, focus))) {
-        wm_window_request_close(window);
+    if (focus) {
+        for (auto* window : wm->windows) {
+            if (window->surface == focus) {
+                wm_window_request_close(window);
+                break;
+            }
+        }
     }
-    return SeatEventFilterResult::capture;
+
+    return WmEventFilterResult::capture;
 }
 
 static
-auto filter_event(WmServer* wm, SeatEvent* event) -> SeatEventFilterResult
+auto filter_event(WmServer* wm, WmEvent* event) -> WmEventFilterResult
 {
     switch (event->type) {
-        break;case SeatEventType::keyboard_key:
+        break;case WmEventType::keyboard_key:
             if (!event->keyboard.key.pressed) return {};
             if (event->keyboard.key.code == KEY_Q) {
-                return close_focused(wm,
-                    seat_keyboard_get_seat(event->keyboard.keyboard),
-                    seat_keyboard_get_focus(event->keyboard.keyboard));
+                return close_focused(wm, event->keyboard.seat, wm_keyboard_get_focus(event->keyboard.seat));
             }
             if (event->keyboard.key.code == KEY_S) {
-                auto mods = seat_keyboard_get_modifiers(event->keyboard.keyboard);
+                auto mods = wm_keyboard_get_modifiers(event->keyboard.seat);
                 if (mods.contains(wm->main_mod)) {
-                    seat_keyboard_focus(event->keyboard.keyboard, nullptr);
+                    wm_keyboard_focus(event->keyboard.seat, nullptr);
                 }
             }
-        break;case SeatEventType::pointer_button:
+        break;case WmEventType::pointer_button:
             if (!event->pointer.button.pressed) return {};
             if (event->pointer.button.code == BTN_MIDDLE) {
-                return close_focused(wm,
-                    seat_pointer_get_seat(event->pointer.pointer),
-                    seat_pointer_get_focus(event->pointer.pointer));
+                return close_focused(wm, event->pointer.seat, wm_pointer_get_focus(event->pointer.seat));
             }
         break;default:
             ;
@@ -46,7 +48,7 @@ auto filter_event(WmServer* wm, SeatEvent* event) -> SeatEventFilterResult
 
 void wm_init_hotkeys(WmServer* wm)
 {
-    wm->hotkeys.filter = seat_add_event_filter(wm_get_seat(wm), [wm](SeatEvent* event) {
+    wm_add_event_filter(wm, [wm](WmEvent* event) {
         return filter_event(wm, event);
     });
 }

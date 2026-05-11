@@ -12,8 +12,6 @@ struct ShellLauncher
     std::string filter;
     const WmLauncherApp* selected = 0;
 
-    Ref<SeatEventFilter> event_filter;
-
     bool show = false;
     bool grab_focus = false;
 
@@ -157,17 +155,19 @@ auto shell_init_launcher(Shell* shell) -> Ref<void>
         frame(launcher);
     });
 
-    launcher->event_filter = seat_add_event_filter(wm_get_seat(shell->wm), [launcher = launcher.get()](SeatEvent* event) -> SeatEventFilterResult {
-        if (event->type != SeatEventType::keyboard_key) return {};
+    wm_add_event_filter(shell->wm, [launcher = Weak(launcher.get())](WmEvent* event) -> WmEventFilterResult {
+        if (!launcher) return WmEventFilterResult::passthrough;
+
+        if (event->type != WmEventType::keyboard_key) return {};
 
         auto key = event->keyboard.key;
         if (!key.pressed || key.code != KEY_D) return {};
 
-        auto mods = seat_keyboard_get_modifiers(event->keyboard.keyboard);
+        auto mods = wm_keyboard_get_modifiers(event->keyboard.seat);
         if (!mods.contains(launcher->shell->main_mod)) return {};
 
-        show(launcher);
-        return SeatEventFilterResult::capture;
+        show(launcher.get());
+        return WmEventFilterResult::capture;
     });
 
     return launcher;

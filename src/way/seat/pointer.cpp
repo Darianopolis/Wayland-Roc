@@ -27,9 +27,7 @@ void set_cursor(wl_client* wl_client, wl_resource* resource, u32 serial, wl_reso
         }
     }
 
-    if (seat->pointer) {
-        seat_pointer_set_cursor(seat->pointer, surface ? surface->surface->tree.get() : nullptr);
-    }
+    wm_pointer_set_cursor(seat->seat, surface ? surface->surface.get() : nullptr);
 }
 
 WAY_INTERFACE(wl_pointer) = {
@@ -63,12 +61,13 @@ static
 void pointer_leave_surface(WayClientSeat* client_seat, WaySurface* surface, WaySerial serial)
 {
     if (!surface->resource) return;
+
     for (auto* resource : client_seat->pointers) {
         way_send<wl_pointer_send_leave>(resource, serial.value, surface->resource);
     }
 }
 
-void way_seat_on_pointer_leave(WayClientSeat* client_seat, SeatEvent* event)
+void way_seat_on_pointer_leave(WayClientSeat* client_seat, WmPointerEvent*)
 {
     auto* seat = client_seat->seat;
 
@@ -80,29 +79,26 @@ void way_seat_on_pointer_leave(WayClientSeat* client_seat, SeatEvent* event)
     }
 
     seat->focus.pointer = nullptr;
-    seat->pointer = nullptr;
 }
 
-void way_seat_on_pointer_enter(WayClientSeat* client_seat, SeatEvent* event)
+void way_seat_on_pointer_enter(WayClientSeat* client_seat, WmPointerEvent* event)
 {
     auto* seat = client_seat->seat;
     auto* server = seat->server;
 
-    seat->pointer = event->pointer.pointer;
-
     auto serial = way_next_serial(server);
 
     auto* old_surface = seat->focus.pointer.get();
-    auto* new_surface = find_surface(client_seat->client, event->pointer.focus);
+    auto* new_surface = find_surface(client_seat->client, event->focus);
 
-    if (old_surface && new_surface && old_surface != new_surface) {
+    if (old_surface && old_surface != new_surface) {
         pointer_leave_surface(client_seat, old_surface, serial);
     }
 
     seat->focus.pointer = new_surface;
 
     if (!new_surface->resource) return;
-    auto pos = to_fixed(to_surface_pos(new_surface, seat_pointer_get_position(seat->pointer)));
+    auto pos = to_fixed(to_surface_pos(new_surface, wm_pointer_get_position(seat->seat)));
     for (auto* resource : client_seat->pointers) {
         way_send<wl_pointer_send_enter>(resource, serial.value, new_surface->resource, pos.x, pos.y);
         pointer_frame(server, resource);
@@ -111,26 +107,32 @@ void way_seat_on_pointer_enter(WayClientSeat* client_seat, SeatEvent* event)
 
 // -----------------------------------------------------------------------------
 
-void way_seat_on_motion(WayClientSeat* client_seat, SeatEvent* event)
+void way_seat_on_motion(WayClientSeat* client_seat, WmPointerEvent* event)
 {
     auto* seat = client_seat->seat;
     auto* server = seat->server;
 
     auto* surface = seat->focus.pointer.get();
     if (!surface) return;
+    if (surface->client != client_seat->client) return;
+
+    if (way_client_is_behind(client_seat->client)) {
+        log_warn("WayClient{{{}}} is running behind, skipping pointer motion events...", (void*)client_seat->client);
+        return;
+    }
 
     auto elapsed = way_get_elapsed(server);
     u64 time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 
-    auto pos = to_fixed(to_surface_pos(surface, seat_pointer_get_position(seat->pointer)));
+    auto pos = to_fixed(to_surface_pos(surface, wm_pointer_get_position(seat->seat)));
 
     {
         u64 time_us = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
         u32 time_us_hi = time_us >> 32;
         u32 time_us_lo = time_us & ~0u;
 
-        auto accel   = to_fixed(event->pointer.motion.rel_accel);
-        auto unaccel = to_fixed(event->pointer.motion.rel_unaccel);
+        auto accel   = to_fixed(event->motion.rel_accel);
+        auto unaccel = to_fixed(event->motion.rel_unaccel);
         for (auto* resource : client_seat->relative_pointers) {
             way_send<zwp_relative_pointer_v1_send_relative_motion>(
                 resource, time_us_hi, time_us_lo, accel.x, accel.y, unaccel.x, unaccel.y);
@@ -143,7 +145,7 @@ void way_seat_on_motion(WayClientSeat* client_seat, SeatEvent* event)
     }
 }
 
-void way_seat_on_button(WayClientSeat* client_seat, SeatEvent* event)
+void way_seat_on_button(WayClientSeat* client_seat, WmPointerEvent* event)
 {
     auto* seat = client_seat->seat;
     auto* server = seat->server;
@@ -151,7 +153,7 @@ void way_seat_on_button(WayClientSeat* client_seat, SeatEvent* event)
     auto serial = way_next_serial(server);
     auto elapsed = way_get_elapsed(server);
     u64 time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    auto button = event->pointer.button;
+    auto& button = event->button;
     auto state = button.pressed ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED;
 
     for (auto* resource : client_seat->pointers) {
@@ -160,14 +162,14 @@ void way_seat_on_button(WayClientSeat* client_seat, SeatEvent* event)
     }
 }
 
-void way_seat_on_scroll(WayClientSeat* client_seat, SeatEvent* event)
+void way_seat_on_scroll(WayClientSeat* client_seat, WmPointerEvent* event)
 {
     auto* seat = client_seat->seat;
     auto* server = seat->server;
 
     auto elapsed = way_get_elapsed(server);
     u64 time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    auto delta = event->pointer.scroll.delta;
+    auto delta = event->scroll.delta;
 
     static constexpr f32 axis_pixel_rate = 15.f;
 

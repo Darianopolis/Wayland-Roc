@@ -58,7 +58,7 @@ void receive(wl_client* client, wl_resource* resource, const char* mime_type, fd
     auto write = Fd(fd);
 
     auto* offer = way_get_userdata<WayDataOffer>(resource);
-    seat_data_source_receive(offer->source.get(), mime_type, write.get());
+    wm_data_source_receive(offer->source.get(), mime_type, write.get());
 }
 
 WAY_INTERFACE(wl_data_offer) = {
@@ -75,7 +75,7 @@ static
 void offer(wl_client* client, wl_resource* resource, const char* mime_type)
 {
     auto* source = way_get_userdata<WayDataSource>(resource);
-    seat_data_source_offer(source, mime_type);
+    wm_data_source_offer(source, mime_type);
 }
 
 WAY_INTERFACE(wl_data_source) = {
@@ -107,7 +107,7 @@ void set_selection(wl_client* wl_client, wl_resource* wl_data_device, wl_resourc
 {
     auto* client_seat = way_get_userdata<WayClientSeat>(wl_data_device);
     auto* source = way_get_userdata<WayDataSource>(wl_data_source);
-    seat_set_selection(client_seat->seat->seat, source);
+    wm_set_selection(client_seat->seat->seat, source);
 }
 
 WAY_INTERFACE(wl_data_device) = {
@@ -119,7 +119,7 @@ WAY_INTERFACE(wl_data_device) = {
 // -----------------------------------------------------------------------------
 
 static
-auto make_offer(WayClientSeat* client_seat, wl_resource* wl_data_device, SeatDataSource* source) -> Ref<WayDataOffer>
+auto make_offer(WayClientSeat* client_seat, wl_resource* wl_data_device, WmDataSource* source) -> Ref<WayDataOffer>
 {
     auto offer = ref_create<WayDataOffer>();
     offer->client_seat = client_seat;
@@ -128,7 +128,7 @@ auto make_offer(WayClientSeat* client_seat, wl_resource* wl_data_device, SeatDat
     offer->resource = way_resource_create_refcounted(wl_data_offer, client_seat->client->wl_client, wl_data_device, 0, offer.get());
 
     way_send<wl_data_device_send_data_offer>(wl_data_device, offer->resource);
-    for (auto& mime : seat_data_source_get_offered(offer->source.get())) {
+    for (auto& mime : wm_data_source_get_offered(offer->source.get())) {
         way_send<wl_data_offer_send_offer>(offer->resource, mime.c_str());
     }
 
@@ -142,10 +142,10 @@ auto make_offer(WayClientSeat* client_seat, wl_resource* wl_data_device, SeatDat
 void way_data_offer_selection(WayClientSeat* client_seat)
 {
     auto* seat = client_seat->seat;
-    auto* source = seat_get_selection(seat->seat);
+    auto* source = wm_get_selection(seat->seat);
 
     if (!source) return;
-    if (!seat->focus.keyboard || !seat->focus.keyboard->client) return;
+    // if (!seat->focus.keyboard || !seat->focus.keyboard->client) return;
 
     for (auto* wl_data_device : client_seat->data_devices) {
         auto offer = make_offer(client_seat, wl_data_device, source);

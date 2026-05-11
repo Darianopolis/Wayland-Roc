@@ -4,19 +4,7 @@ auto wm_connect(WmServer* server) -> Ref<WmClient>
 {
     auto client = ref_create<WmClient>();
     client->wm = server;
-    client->seat_client = seat_connect(wm_get_seat_manager(server));
     server->clients.emplace_back(client.get());
-
-    seat_listen(client->seat_client.get(), [client = client.get()](SeatEvent* event) {
-        if (client->listener) {
-            client->listener(client, ptr_to(WmEvent {
-                .seat = {
-                    .type = WmEventType::seat_event,
-                    .event = event,
-                }
-            }));
-        }
-    });
 
     return client;
 }
@@ -31,21 +19,35 @@ void wm_listen(WmClient* client, std::move_only_function<void(WmClient*, WmEvent
     client->listener = std::move(listener);
 }
 
-auto wm_get_seat_client(WmClient* client) -> SeatClient*
+auto wm_filter_event(WmServer* wm, WmEvent* event) -> WmEventFilterResult
 {
-    return client->seat_client.get();
+    for (auto& fn : wm->event_filters) {
+        if (fn(event) == WmEventFilterResult::capture) {
+            return WmEventFilterResult::capture;
+        }
+    }
+
+    return WmEventFilterResult::passthrough;
 }
 
-void wm_client_post_event(WmClient* client, WmEvent* event)
+void wm_client_post_event_unfiltered(WmClient* client, WmEvent* event)
 {
     if (client->listener) {
         client->listener(client, event);
     }
 }
 
+void wm_client_post_event(WmClient* client, WmEvent* event)
+{
+    if (wm_filter_event(client->wm, event) == WmEventFilterResult::capture) return;
+    wm_client_post_event_unfiltered(client, event);
+}
+
 void wm_broadcast_event(WmServer* server, WmEvent* event)
 {
+    if (wm_filter_event(server, event) == WmEventFilterResult::capture) return;
+
     for (auto* client : server->clients) {
-        wm_client_post_event(client, event);
+        wm_client_post_event_unfiltered(client, event);
     }
 }

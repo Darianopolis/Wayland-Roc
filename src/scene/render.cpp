@@ -164,6 +164,8 @@ void scene_render(Scene* scene, GpuImage* target, rect2f32 viewport)
         },
         scene_iterate_default);
 
+    if (draws.empty()) return;
+
     auto gpu = scene->gpu;
 
     auto make_gpu = [&]<typename T>(std::span<T> data) {

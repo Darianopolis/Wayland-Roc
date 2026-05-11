@@ -50,10 +50,10 @@ auto get_data(ImGuiViewport* vp) -> UiViewportData*
 // -----------------------------------------------------------------------------
 
 static
-auto find_viewport_for_focus(Ui* ui, SeatFocus* focus) -> ImGuiViewport*
+auto find_viewport_for_focus(Ui* ui, WmSurface* focus) -> ImGuiViewport*
 {
     for (auto* vp : get_viewports()) {
-        if (auto* data = get_data(vp); data && data->surface->focus.get() == focus) {
+        if (auto* data = get_data(vp); data && data->surface.get() == focus) {
             return vp;
         }
     }
@@ -130,7 +130,7 @@ void Platform_ShowWindow(ImGuiViewport* vp)
 
     wm_window_map(data->window.get());
     for (auto* seat : wm_get_seats(ui->wm)) {
-        seat_keyboard_focus(seat_get_keyboard(seat), data->surface->focus.get());
+        wm_keyboard_focus(seat, data->surface.get());
     }
 }
 
@@ -173,7 +173,7 @@ const char* text_mime_types[] = {
     "text/html",
 };
 
-struct UiDataSource : SeatDataSource
+struct UiDataSource : WmDataSource
 {
     std::string message;
 
@@ -193,11 +193,11 @@ void Platform_SetClipboardTextFn(ImGuiContext* imgui, const char* text)
     data_source->message = text;
 
     for (auto* mime : text_mime_types) {
-        seat_data_source_offer(data_source.get(), mime);
+        wm_data_source_offer(data_source.get(), mime);
     }
 
-    for (auto* seat : ui->seats) {
-        seat_set_selection(seat, data_source.get());
+    for (auto* seat : wm_get_seats(ui->wm)) {
+        wm_set_selection(seat, data_source.get());
     }
 }
 
@@ -219,9 +219,9 @@ auto Platform_GetClipboardTextFn(ImGuiContext* imgui) -> const char*
 {
     auto* ui = get_context(imgui);
 
-    for (auto* seat : ui->seats) {
-        if (auto* source = seat_get_selection(seat)) {
-            auto available = seat_data_source_get_offered(source);
+    for (auto* seat : wm_get_seats(ui->wm)) {
+        if (auto* source = wm_get_selection(seat)) {
+            auto available = wm_data_source_get_offered(source);
             for (auto mime : text_mime_types) {
                 if (std::ranges::contains(available, std::string_view(mime))) {
                     auto[read, write] = [] {
@@ -229,7 +229,7 @@ auto Platform_GetClipboardTextFn(ImGuiContext* imgui) -> const char*
                         unix_check<pipe>(fd);
                         return std::make_pair(Fd(fd[0]), Fd(fd[1]));
                     }();
-                    seat_data_source_receive(source, mime, write.get());
+                    wm_data_source_receive(source, mime, write.get());
                     write.reset();
 
                     ui->clipboard.text = read_to_string(read.get());
@@ -335,9 +335,7 @@ void init(Ui* ui, const std::filesystem::path& path)
 
 void ui_request_frame(Ui* ui)
 {
-    // Double-pump frames: ImGui always works based on last frame state,
-    // so input needs a second frame to react against the updated state.
-    ui->frames_requested = 2;
+    ui->frames_requested = 3;
     wm_request_frame(ui->wm);
 }
 
@@ -407,7 +405,8 @@ void render_viewport(Ui* ui, ImGuiViewport* vp)
     }
 }
 
-void ui_frame(Ui* ui)
+static
+void frame(Ui* ui)
 {
     if (!ui->frames_requested) return;
     ui->frames_requested--;
@@ -431,8 +430,12 @@ void ui_frame(Ui* ui)
     ui->frame_handler();
     ImGui::Render();
 
-    if (ui->pointer) {
-        seat_pointer_set_xcursor(ui->pointer, imgui_cursor_to_xcursor(ImGui::GetMouseCursor()));
+    for (auto* seat : wm_get_seats(ui->wm)) {
+        if (!std::ranges::any_of(get_viewports(), [&](auto* vp) {
+            auto* data = get_data(vp);
+            return data && wm_pointer_get_focus(seat) == data->surface.get();
+        })) continue;
+        wm_pointer_set_xcursor(seat, imgui_cursor_to_xcursor(ImGui::GetMouseCursor()));
     }
 
     // Zero-sized main viewport should never contain draw data
@@ -452,37 +455,7 @@ void ui_frame(Ui* ui)
 // -----------------------------------------------------------------------------
 
 static
-void handle_seat_event(Ui* ui, SeatEvent* event)
-{
-    switch (event->type) {
-
-        // keyboard
-        break;case SeatEventType::keyboard_enter:
-            ui_handle_keyboard_enter(ui, event->keyboard.keyboard, event->keyboard.focus);
-        break;case SeatEventType::keyboard_leave:
-            ui_handle_keyboard_leave(ui);
-        break;case SeatEventType::keyboard_key:
-            ui_handle_key(ui, event->keyboard.key.code, event->keyboard.key.pressed);
-        break;case SeatEventType::keyboard_modifier:
-            ui_handle_mods(ui);
-
-        // pointer
-        break;case SeatEventType::pointer_enter:
-            ui_handle_pointer_enter(ui, event->pointer.pointer, event->pointer.focus);
-        break;case SeatEventType::pointer_leave:
-            ui_handle_pointer_leave(ui);
-        break;case SeatEventType::pointer_motion:
-            ui_handle_motion(ui);
-        break;case SeatEventType::pointer_button:
-            ui_handle_button(ui, event->pointer.button.code, event->pointer.button.pressed);
-        break;case SeatEventType::pointer_scroll:
-            ui_handle_wheel(ui, event->pointer.scroll.delta);
-
-        // selection
-        break;case SeatEventType::selection:
-            ;
-    }
-}
+void handle_event(Ui* ui, WmEvent* event);
 
 auto ui_create(Gpu* gpu, WmServer* wm, const std::filesystem::path& path) -> Ref<Ui>
 {
@@ -499,26 +472,7 @@ auto ui_create(Gpu* gpu, WmServer* wm, const std::filesystem::path& path) -> Ref
 
     wm_listen(ui->client.get(), [ui = ui.get()](WmClient*, WmEvent* event) {
         UiContextGuard _{ui->context};
-        switch (event->type) {
-            // output
-            break;case WmEventType::output_frame:
-                ui_frame(ui);
-            break;case WmEventType::output_layout:
-                ui_handle_output_layout(ui);
-
-            // window
-            break;case WmEventType::window_reposition_requested:
-                handle_reposition(ui, event->window.window, event->window.reposition.frame);
-            break;case WmEventType::window_close_requested:
-                handle_close(ui, event->window.window);
-
-            // seat
-            break;case WmEventType::seat_event:
-                handle_seat_event(ui, event->seat.event);
-
-            break;default:
-                ;
-        }
+        handle_event(ui, event);
     });
 
     return ui;
@@ -531,13 +485,10 @@ void ui_set_frame_handler(Ui* ui, std::move_only_function<UiFrameFn>&& handler)
 
 // -----------------------------------------------------------------------------
 
-void ui_handle_keyboard_enter(Ui* ui, SeatKeyboard* keyboard, SeatFocus* focus)
+static
+void handle_keyboard_enter(Ui* ui, WmKeyboardEvent* event)
 {
-    ui->keyboard = keyboard;
-
-    ui->seats.emplace(seat_keyboard_get_seat(keyboard));
-
-    if (auto* vp = find_viewport_for_focus(ui, focus)) {
+    if (auto* vp = find_viewport_for_focus(ui, event->focus)) {
         wm_window_raise(get_data(vp)->window.get());
     }
 
@@ -547,53 +498,54 @@ void ui_handle_keyboard_enter(Ui* ui, SeatKeyboard* keyboard, SeatFocus* focus)
     ui_request_frame(ui);
 }
 
-void ui_handle_keyboard_leave(Ui* ui)
+static
+void handle_keyboard_leave(Ui* ui, WmKeyboardEvent* event)
 {
-    ui->seats.emplace(seat_keyboard_get_seat(ui->keyboard));
-
-    ui->keyboard = nullptr;
-
     auto& io = ImGui::GetIO();
     io.AddFocusEvent(false);
 
     ui_request_frame(ui);
 }
 
-void ui_handle_key(Ui* ui, SeatInputCode code, bool pressed)
+static
+void handle_key(Ui* ui, WmKeyboardEvent* event)
 {
     auto& io = ImGui::GetIO();
 
-    io.AddKeyEvent(imgui_key_from_xkb_sym(seat_keyboard_get_sym(ui->keyboard, code)), pressed);
-    if (pressed) io.AddInputCharactersUTF8(seat_keyboard_get_utf8(ui->keyboard, code).c_str());
+    io.AddKeyEvent(imgui_key_from_xkb_sym(event->key.sym), event->key.pressed);
+    if (event->key.pressed) io.AddInputCharactersUTF8(event->key.utf8);
 
     ui_request_frame(ui);
 }
 
-void ui_handle_mods(Ui* ui)
+static
+void handle_mods(Ui* ui, WmKeyboardEvent* event)
 {
     auto& io = ImGui::GetIO();
 
-    auto mods = seat_keyboard_get_modifiers(ui->keyboard);
+    auto mods = wm_keyboard_get_modifiers(event->seat);
 
-    io.AddKeyEvent(ImGuiMod_Shift, mods.contains(SeatModifier::shift));
-    io.AddKeyEvent(ImGuiMod_Ctrl,  mods.contains(SeatModifier::ctrl));
-    io.AddKeyEvent(ImGuiMod_Alt,   mods.contains(SeatModifier::alt));
-    io.AddKeyEvent(ImGuiMod_Super, mods.contains(SeatModifier::super));
+    io.AddKeyEvent(ImGuiMod_Shift, mods.contains(WmModifier::shift));
+    io.AddKeyEvent(ImGuiMod_Ctrl,  mods.contains(WmModifier::ctrl));
+    io.AddKeyEvent(ImGuiMod_Alt,   mods.contains(WmModifier::alt));
+    io.AddKeyEvent(ImGuiMod_Super, mods.contains(WmModifier::super));
 
     ui_request_frame(ui);
 }
 
-void ui_handle_motion(Ui* ui)
+static
+void handle_motion(Ui* ui, WmPointerEvent* event)
 {
     auto& io = ImGui::GetIO();
 
-    auto pos = seat_pointer_get_position(ui->pointer);
+    auto pos = wm_pointer_get_position(event->seat);
     io.AddMousePosEvent(pos.x, pos.y);
 
     ui_request_frame(ui);
 }
 
-void ui_handle_button(Ui* ui, SeatInputCode code, bool pressed)
+static
+void handle_button(Ui* ui, u32 code, bool pressed)
 {
     auto& io = ImGui::GetIO();
 
@@ -609,47 +561,51 @@ void ui_handle_button(Ui* ui, SeatInputCode code, bool pressed)
     ui_request_frame(ui);
 }
 
-void ui_handle_wheel(Ui* ui, vec2f32 delta)
+static
+void handle_button(Ui* ui, WmPointerEvent* event)
+{
+    handle_button(ui, event->button.code, event->button.pressed);
+}
+
+static
+void handle_wheel(Ui* ui, WmPointerEvent* event)
 {
     auto& io = ImGui::GetIO();
 
-    io.AddMouseWheelEvent(delta.x, -delta.y);
+    io.AddMouseWheelEvent(event->scroll.delta.x, -event->scroll.delta.y);
     ui_request_frame(ui);
 }
 
-void ui_handle_pointer_enter(Ui* ui, SeatPointer* pointer, SeatFocus* focus)
+static
+void handle_pointer_enter(Ui* ui, WmPointerEvent* event)
 {
-    ui->pointer = pointer;
-
     auto& io = ImGui::GetIO();
 
-    if (focus) {
-        io.AddMouseViewportEvent(find_viewport_for_focus(ui, focus)->ID);
-    }
+    io.AddMouseViewportEvent(find_viewport_for_focus(ui, event->focus)->ID);
 
-    auto pos = seat_pointer_get_position(pointer);
+    auto pos = wm_pointer_get_position(event->seat);
     io.AddMousePosEvent(pos.x, pos.y);
 
     ui_request_frame(ui);
 }
 
-void ui_handle_pointer_leave(Ui* ui)
+static
+void handle_pointer_leave(Ui* ui, WmPointerEvent* event)
 {
     auto& io = ImGui::GetIO();
 
     io.AddMouseViewportEvent(0);
     io.AddMousePosEvent(-FLT_MAX,-FLT_MAX);
 
-    for (auto code : seat_pointer_get_pressed(ui->pointer)) {
-        ui_handle_button(ui, code, false);
+    for (auto code : wm_pointer_get_pressed(event->seat)) {
+        handle_button(ui, code, false);
     }
-
-    ui->pointer = nullptr;
 
     ui_request_frame(ui);
 }
 
-void ui_handle_output_layout(Ui* ui)
+static
+void handle_output_layout(Ui* ui)
 {
     auto& platform_io = ImGui::GetPlatformIO();
 
@@ -665,6 +621,55 @@ void ui_handle_output_layout(Ui* ui)
     }
 
     ui_request_frame(ui);
+}
+
+// -----------------------------------------------------------------------------
+
+static
+void handle_event(Ui* ui, WmEvent* event)
+{
+    switch (event->type) {
+        // output
+        break;case WmEventType::output_frame:
+            frame(ui);
+        break;case WmEventType::output_layout:
+            handle_output_layout(ui);
+
+        // window
+        break;case WmEventType::window_reposition_requested:
+            handle_reposition(ui, event->window.window, event->window.reposition.frame);
+        break;case WmEventType::window_close_requested:
+            handle_close(ui, event->window.window);
+
+        // keyboard
+        break;case WmEventType::keyboard_enter:
+            handle_keyboard_enter(ui, &event->keyboard);
+        break;case WmEventType::keyboard_leave:
+            handle_keyboard_leave(ui, &event->keyboard);
+        break;case WmEventType::keyboard_key:
+            handle_key(ui, &event->keyboard);
+        break;case WmEventType::keyboard_modifier:
+            handle_mods(ui, &event->keyboard);
+
+        // pointer
+        break;case WmEventType::pointer_enter:
+            handle_pointer_enter(ui, &event->pointer);
+        break;case WmEventType::pointer_leave:
+            handle_pointer_leave(ui, &event->pointer);
+        break;case WmEventType::pointer_motion:
+            handle_motion(ui, &event->pointer);
+        break;case WmEventType::pointer_button:
+            handle_button(ui, &event->pointer);
+        break;case WmEventType::pointer_scroll:
+            handle_wheel(ui, &event->pointer);
+
+        // selection
+        break;case WmEventType::selection:
+            ;
+
+        break;default:
+            ;
+    }
 }
 
 // -----------------------------------------------------------------------------

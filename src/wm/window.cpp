@@ -153,14 +153,12 @@ void update_border_colors(WmServer* wm)
 
 void wm_decoration_init(WmServer* wm)
 {
-    for (auto* seat : wm->seats) {
-        wm->decoration.filter.emplace_back(seat_add_event_filter(seat, [wm](SeatEvent* event) -> SeatEventFilterResult {
-            if (event->type == SeatEventType::keyboard_enter || event->type == SeatEventType::keyboard_leave) {
-                update_border_colors(wm);
-            }
-            return SeatEventFilterResult::passthrough;
-        }));
-    }
+    wm_add_event_filter(wm, [wm](WmEvent* event) -> WmEventFilterResult {
+        if (event->type == WmEventType::keyboard_enter || event->type == WmEventType::keyboard_leave) {
+            update_border_colors(wm);
+        }
+        return WmEventFilterResult::passthrough;
+    });
 }
 
 // -----------------------------------------------------------------------------
@@ -195,28 +193,32 @@ auto wm_find_window_at(WmServer* wm, vec2f32 point) -> WmWindow*
 
 void wm_window_focus(WmWindow* window)
 {
+    if (!window->surface) return;
+
     auto* wm = window->client->wm;
 
-    auto* keyboard = seat_get_keyboard(wm_get_seat(wm));
-    if (keyboard) {
-        seat_keyboard_focus(keyboard, window->surface->focus.get());
+    for (auto* seat : wm_get_seats(wm)) {
+        wm_keyboard_focus(seat, window->surface.get());
     }
+
     wm_window_raise(window);
 }
 
 auto wm_window_is_focused(WmWindow* window) -> bool
 {
+    if (!window->surface) return false;
     auto* wm = window->client->wm;
-    return std::ranges::any_of(wm->seats, [&](auto* seat) {
-        auto* focus = seat_keyboard_get_focus(seat_get_keyboard(seat));
-        return wm_surface_contains_focus(window->surface, focus);
-    });;
+    return std::ranges::any_of(wm_get_seats(wm), [&](auto* seat) {
+        auto* focus = wm_keyboard_get_focus(seat);
+        return wm_surface_contains(window->surface.get(), focus);
+    });
 }
 
-auto wm_find_window_for(WmServer* wm, SeatFocus* focus) -> WmWindow*
+auto wm_find_window_for(WmServer* wm, WmSurface* focus) -> WmWindow*
 {
     for (auto* window : wm->windows) {
-        if (wm_surface_contains_focus(window->surface, focus)) {
+        if (!window->surface) continue;
+        if (wm_surface_contains(window->surface.get(), focus)) {
             return window;
         }
     }

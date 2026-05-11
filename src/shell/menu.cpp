@@ -2,8 +2,6 @@
 
 #include <ui/ui.hpp>
 
-#include <way/surface/surface.hpp>
-
 struct ShellMenu
 {
     Shell* shell;
@@ -70,15 +68,7 @@ void frame(ShellMenu* menu)
             scene_iterate<SceneIterateDirection::back_to_front>(
                 wm_get_layer(wm, WmLayer::window)->parent,
                 [&](SceneTree* tree) {
-                    WaySurface* surface;
-                    if (tree->userdata.id == way->userdata_id
-                            && (surface = way_get_userdata<WaySurface>(way, tree->userdata.data))) {
-                        log_warn("{}tree({}{}) {{", indent(),
-                            surface->role,
-                            tree->enabled ? "": ", disabled");
-                    } else {
-                        log_warn("{}tree{} {{", indent(), tree->enabled ? "": "(disabled)");
-                    }
+                    log_warn("{}tree{} {{", indent(), tree->enabled ? "": "(disabled)");
                     depth += 2;
                 },
                 [&](SceneNode* node) {

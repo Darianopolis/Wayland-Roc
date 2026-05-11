@@ -42,15 +42,8 @@ void constrain_pointer(
         constraint->resource = way_resource_create_refcounted(zwp_confined_pointer_v1, client, resource, id, constraint.get());
     }
 
-    // TODO: We shouldn't depend on a toplevel here
-    auto* root = [](this auto&& self, WaySurface* surface) -> WaySurface* {
-        return surface->parent ? self(surface->parent.get()) : surface;
-    }(surface);
-    debug_assert(root->toplevel, "TODO");
-
     constraint->constraint = wm_constrain_pointer(
-        root->toplevel->window.get(),
-        surface->surface->input_region.get(),
+        surface->surface.get(),
         region
             ? region->region
             : region2f32{way_infinite_aabb},
@@ -96,7 +89,7 @@ void set_region(wl_client* client, wl_resource* resource, wl_resource* wl_region
 
 WAY_INTERFACE(zwp_locked_pointer_v1) = {
     .destroy = way_simple_destroy,
-    WAY_STUB(set_cursor_position_hint),
+    WAY_STUB_QUIET(set_cursor_position_hint),
     .set_region = set_region,
 };
 

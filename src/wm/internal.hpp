@@ -30,14 +30,38 @@ struct WmOutput
     ~WmOutput();
 };
 
-struct WmInputDevice
+struct WmKeyboard : WmKeyboardInfo
+{
+    CountingSet<u32> pressed;
+
+    EnumMap<WmModifier, xkb_mod_mask_t> mod_masks;
+
+    Weak<WmSurface> focus;
+
+    ~WmKeyboard();
+};
+
+struct WmPointer
+{
+    CountingSet<u32> pressed;
+    vec2f32 position;
+
+    Ref<SceneTree> tree;
+    Weak<SceneNode> visual;
+
+    Weak<WmSurface> focus;
+};
+
+struct WmSeat
 {
     WmServer* server;
 
-    void* userdata;
-    WmInputDeviceInterface interface;
+    std::string name;
 
-    ~WmInputDevice();
+    WmKeyboard keyboard;
+    WmPointer  pointer;
+
+    Ref<WmDataSource> selection;
 };
 
 struct WmServer
@@ -45,12 +69,12 @@ struct WmServer
     ExecContext* exec;
     Gpu*         gpu;
 
-    Ref<SeatManager> seat_manager;
-
     Ref<Scene> scene;
     EnumMap<WmLayer, Ref<SceneTree>> layers;
 
-    SeatModifier main_mod;
+    std::vector<std::move_only_function<WmEventFilterResult(WmEvent*)>> event_filters;
+
+    WmModifier main_mod;
 
     WmInteractionMode mode;
 
@@ -63,28 +87,25 @@ struct WmServer
 
     WmPointerConstraint* active_pointer_constraint;
     std::vector<WmPointerConstraint*> pointer_constraints;
-    Ref<SeatEventFilter> pointer_constraints_filter;
+
+    WmSeat seat;
+    std::array<WmSeat*, 1> seats;
+
+    struct {
+        Ref<GpuSampler> sampler;
+
+        std::string theme;
+        i32         size;
+
+        ankerl::unordered_dense::map<std::string_view, Ref<SceneNode>> cache;
+    } xcursor;
 
     struct {
         std::vector<WmOutput*> outputs;
-        std::vector<WmInputDevice*> input_devices;
     } io;
 
-    Ref<SeatCursorManager> cursor_manager;
-    RefVector<Seat> seats;
-
     struct {
-        Ref<SeatEventFilter> filter;
-    } hotkeys;
-
-    struct {
-        RefVector<SeatEventFilter> filter;
-    } decoration;
-
-    struct {
-        Ref<SeatEventFilter> filter;
-        SeatPointer* pointer;
-
+        WmSeat* seat;
         Weak<WmWindow> window;
         vec2f32  grab;
         rect2f32 frame;
@@ -92,8 +113,7 @@ struct WmServer
     } movesize;
 
     struct {
-        Ref<SeatEventFilter> filter;
-        SeatPointer* pointer;
+        WmSeat* seat;
         Ref<SceneTexture> texture;
 
         Weak<WmWindow> window;
@@ -103,15 +123,18 @@ struct WmServer
     } zone;
 
     struct {
-        Ref<SeatEventFilter> filter;
-        Seat* seat;
+        WmSeat* seat;
         Weak<WmWindow> cycled;
     } focus;
 };
 
-void wm_init_io(     WmServer*);
-void wm_init_seat(   WmServer*);
+void wm_init_scene(WmServer*);
+void wm_init_xcursor(WmServer*);
+void wm_init_seat( WmServer*);
 void wm_init_hotkeys(WmServer*);
+
+void wm_init_keyboard(WmSeat*);
+void wm_init_pointer( WmSeat*);
 
 void wm_init_movesize(   WmServer*);
 void wm_init_zone(       WmServer*);
@@ -131,9 +154,9 @@ struct WmClient
 {
     WmServer* wm;
 
-    std::move_only_function<void(WmClient*, WmEvent*)> listener;
+    std::vector<WmSurface*> surfaces;
 
-    Ref<SeatClient> seat_client;
+    std::move_only_function<void(WmClient*, WmEvent*)> listener;
 
     ~WmClient();
 };
@@ -143,7 +166,7 @@ struct WmClient
 struct WmWindow
 {
     WmClient* client;
-    WmSurface* surface;
+    Weak<WmSurface> surface;
 
     vec2f32 extent;
     bool mapped;
@@ -166,8 +189,7 @@ struct WmPointerConstraint
 {
     WmServer* wm;
 
-    Weak<WmWindow> window;
-    Weak<SceneInputRegion> input_region;
+    Weak<WmSurface> surface;
 
     WmPointerConstraintType type;
 
@@ -182,7 +204,7 @@ auto wm_pointer_constraint_apply(WmServer*, vec2f32 position, vec2f32 delta) -> 
 
 // -----------------------------------------------------------------------------
 
-auto wm_get_seat_manager(WmServer*) -> SeatManager*;
-
+auto wm_filter_event(WmServer* wm, WmEvent* event) -> WmEventFilterResult;
 void wm_broadcast_event(WmServer*, WmEvent*);
 void wm_client_post_event(WmClient*, WmEvent*);
+void wm_client_post_event_unfiltered(WmClient*, WmEvent*);

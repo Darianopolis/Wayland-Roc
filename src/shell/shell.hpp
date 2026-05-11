@@ -12,7 +12,7 @@ struct Shell
     WayServer*   way;
     IoContext*   io;
 
-    SeatModifier main_mod;
+    WmModifier main_mod;
 
     std::filesystem::path app_share;
     std::filesystem::path wallpaper;
@@ -25,3 +25,5 @@ auto shell_init_menu(              Shell*) -> Ref<void>;
 auto shell_init_launcher(          Shell*) -> Ref<void>;
 auto shell_init_log_viewer(        Shell*) -> Ref<void>;
 auto shell_init_background(        Shell*) -> Ref<void>;
+
+void shell_run_io(Shell*);

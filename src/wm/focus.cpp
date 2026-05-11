@@ -1,12 +1,13 @@
+
 #include "internal.hpp"
 
 #include "core/math.hpp"
 
 static
-void cycle_next_window(WmServer* wm, SeatPointer* pointer, bool forward)
+void cycle_next_window(WmServer* wm, WmPointer* pointer, bool forward)
 {
     auto in_cycle = [&](WmWindow* window) {
-        if (pointer && !rect_contains(wm_window_get_frame(window), seat_pointer_get_position(pointer))) {
+        if (pointer && !rect_contains(wm_window_get_frame(window), wm_pointer_get_position(CONTAINER_OF(WmSeat, pointer, pointer)))) {
             return false;
         }
         return true;
@@ -47,7 +48,7 @@ void cycle_next_window(WmServer* wm, SeatPointer* pointer, bool forward)
 }
 
 static
-void focus_cycle(WmServer* wm, Seat* seat, SeatPointer* pointer, bool forward)
+void focus_cycle(WmServer* wm, WmSeat* seat, WmPointer* pointer, bool forward)
 {
     bool new_cycle = wm->mode != WmInteractionMode::focus_cycle;
     wm->mode = WmInteractionMode::focus_cycle;
@@ -77,35 +78,35 @@ void focus_cycle_end(WmServer* wm)
 }
 
 static
-auto filter_event(WmServer* wm, SeatEvent* event) -> SeatEventFilterResult
+auto filter_event(WmServer* wm, WmEvent* event) -> WmEventFilterResult
 {
     if (wm->mode != WmInteractionMode::none && wm->mode != WmInteractionMode::focus_cycle) return {};
 
     switch (event->type) {
-        break;case SeatEventType::pointer_scroll: {
+        break;case WmEventType::pointer_scroll: {
             if (!event->pointer.scroll.delta.y) return {};
 
-            auto seat = seat_pointer_get_seat(event->pointer.pointer);
-            auto mods = seat_get_modifiers(seat);
+            auto seat = event->pointer.seat;
+            auto mods = wm_keyboard_get_modifiers(seat);
             if (!mods.contains(wm->main_mod)) return {};
 
-            focus_cycle(wm, seat, event->pointer.pointer, event->pointer.scroll.delta.y < 0);
-            return SeatEventFilterResult::capture;
+            focus_cycle(wm, seat, &seat->pointer, event->pointer.scroll.delta.y < 0);
+            return WmEventFilterResult::capture;
         }
-        break;case SeatEventType::keyboard_key: {
+        break;case WmEventType::keyboard_key: {
             if (!event->keyboard.key.pressed) return {};
 
             if (event->keyboard.key.code != KEY_TAB) return {};
 
-            auto seat = seat_pointer_get_seat(event->pointer.pointer);
-            auto mods = seat_keyboard_get_modifiers(event->keyboard.keyboard);
+            auto seat = event->pointer.seat;
+            auto mods = wm_keyboard_get_modifiers(seat);
             if (!mods.contains(wm->main_mod)) return {};
 
-            focus_cycle(wm, seat, nullptr, !mods.contains(SeatModifier::shift));
-            return SeatEventFilterResult::capture;
+            focus_cycle(wm, seat, nullptr, !mods.contains(WmModifier::shift));
+            return WmEventFilterResult::capture;
         }
-        break;case SeatEventType::keyboard_modifier: {
-            auto mods = seat_keyboard_get_modifiers(event->keyboard.keyboard);
+        break;case WmEventType::keyboard_modifier: {
+            auto mods = wm_keyboard_get_modifiers(event->keyboard.seat);
             if (wm->mode == WmInteractionMode::focus_cycle && !mods.contains(wm->main_mod)) {
                 focus_cycle_end(wm);
             }
@@ -121,7 +122,7 @@ auto filter_event(WmServer* wm, SeatEvent* event) -> SeatEventFilterResult
 
 void wm_init_focus_cycle(WmServer* wm)
 {
-    wm->focus.filter = seat_add_event_filter(wm_get_seat(wm), [wm](SeatEvent* event) {
+    wm_add_event_filter(wm, [wm](WmEvent* event) {
         return filter_event(wm, event);
     });
 }

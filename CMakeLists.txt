@@ -251,22 +251,6 @@ target_sources(scene PRIVATE
 target_link_libraries(scene PUBLIC core gpu)
 
 # ------------------------------------------------------------------------------
-#       Seat
-# ------------------------------------------------------------------------------
-
-init_library(seat)
-target_sources(seat PRIVATE
-    src/seat/keyboard.cpp
-    src/seat/pointer.cpp
-    src/seat/seat.cpp
-    src/seat/cursor.cpp
-    src/seat/client.cpp
-    src/seat/data.cpp
-    src/seat/focus.cpp
-    )
-target_link_libraries(seat PUBLIC core scene)
-
-# ------------------------------------------------------------------------------
 #       Window Manager
 # ------------------------------------------------------------------------------
 
@@ -274,8 +258,13 @@ init_library(wm)
 target_sources(wm PRIVATE
     src/wm/wm.cpp
     src/wm/client.cpp
-    src/wm/io.cpp
+    src/wm/output.cpp
+    src/wm/scene.cpp
     src/wm/seat.cpp
+    src/wm/cursor.cpp
+    src/wm/data.cpp
+    src/wm/keyboard.cpp
+    src/wm/pointer.cpp
     src/wm/surface.cpp
     src/wm/window.cpp
     src/wm/movesize.cpp
@@ -284,7 +273,7 @@ target_sources(wm PRIVATE
     src/wm/focus.cpp
     src/wm/pointer-constraints.cpp
     )
-target_link_libraries(wm PUBLIC core scene seat)
+target_link_libraries(wm PUBLIC core scene)
 
 # ------------------------------------------------------------------------------
 #       UI
@@ -340,6 +329,7 @@ target_link_libraries(way PUBLIC wm)
 init_executable(${PROGRAM_NAME})
 target_sources(${PROGRAM_NAME} PRIVATE
     src/shell/main.cpp
+    src/shell/io.cpp
     src/shell/menu.cpp
     src/shell/xwayland.cpp
     src/shell/app/log-viewer.cpp

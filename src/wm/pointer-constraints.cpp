@@ -4,23 +4,23 @@
 
 void wm_pointer_constraints_init(WmServer* wm)
 {
-    wm->pointer_constraints_filter = seat_add_event_filter(wm_get_seat(wm), [wm](SeatEvent* event) -> SeatEventFilterResult {
-        if (event->type == SeatEventType::keyboard_enter || event->type == SeatEventType::keyboard_leave) {
+    wm_add_event_filter(wm, [wm](WmEvent* event) -> WmEventFilterResult {
+        if (event->type == WmEventType::keyboard_enter || event->type == WmEventType::keyboard_leave) {
             wm_update_active_pointer_constraint(wm);
         }
-        return SeatEventFilterResult::passthrough;
+        return WmEventFilterResult::passthrough;
     });
 }
 
-auto wm_constrain_pointer(WmWindow* window, SceneInputRegion* input_region, region2f32 region, WmPointerConstraintType type) -> Ref<WmPointerConstraint>
+auto wm_constrain_pointer(WmSurface* surface, region2f32 region, WmPointerConstraintType type) -> Ref<WmPointerConstraint>
 {
+    auto* wm = surface->client->wm;
+
     auto constraint = ref_create<WmPointerConstraint>();
-    constraint->wm = window->client->wm;
-    constraint->window = window;
-    constraint->input_region = input_region;
+    constraint->wm = wm;
+    constraint->surface = surface;
     constraint->type = type;
 
-    auto* wm = window->client->wm;
     wm->pointer_constraints.insert(wm->pointer_constraints.begin(), constraint.get());
 
     wm_pointer_constraint_set_region(constraint.get(), region);
@@ -46,7 +46,7 @@ auto wm_pointer_constraint_apply(WmServer* wm, vec2f32 position, vec2f32 delta) 
 
     if (!wm->active_pointer_constraint) return position + delta;
 
-    auto* input_region = wm->active_pointer_constraint->input_region.get();
+    auto* input_region = wm->active_pointer_constraint->surface->input_region.get();
 
     switch (wm->active_pointer_constraint->type) {
         break;case WmPointerConstraintType::locked:
@@ -74,8 +74,10 @@ void wm_update_active_pointer_constraint(WmServer* wm)
 {
     WmPointerConstraint* new_active = nullptr;
     for (auto* constraint : wm->pointer_constraints) {
-        if (!constraint->input_region || !constraint->input_region->parent) continue;
-        if (!constraint->window || !wm_window_is_focused(constraint->window.get())) continue;
+        if (!constraint->surface || !constraint->surface->input_region->parent) continue;
+        if (!std::ranges::any_of(wm_get_seats(wm), [&](WmSeat* seat) -> bool {
+            return wm_surface_contains(constraint->surface.get(), wm_keyboard_get_focus(seat));
+        })) continue;
 
         new_active = constraint;
         break;
@@ -86,9 +88,11 @@ void wm_update_active_pointer_constraint(WmServer* wm)
     if (wm->active_pointer_constraint) {
         for (auto* client : wm->clients) {
             wm_client_post_event(client, ptr_to(WmEvent {
-                .pointer_constraint = {
+                .pointer = {
                     .type = WmEventType::pointer_constraint_disabled,
-                    .constraint = wm->active_pointer_constraint,
+                    .constraint = {
+                        .constraint = wm->active_pointer_constraint,
+                    },
                 }
             }));
         }
@@ -99,9 +103,11 @@ void wm_update_active_pointer_constraint(WmServer* wm)
     if (new_active) {
         for (auto* client : wm->clients) {
             wm_client_post_event(client, ptr_to(WmEvent {
-                .pointer_constraint = {
+                .pointer = {
                     .type = WmEventType::pointer_constraint_enabled,
-                    .constraint = new_active,
+                    .constraint = {
+                        .constraint = new_active,
+                    }
                 }
             }));
         }

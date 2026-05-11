@@ -7,7 +7,7 @@
 // -----------------------------------------------------------------------------
 
 static
-void init_seat(WayServer* server, Seat* scene_seat)
+void init_seat(WayServer* server, WmSeat* scene_seat)
 {
     auto seat = ref_create<WaySeat>();
     seat->server = server;
@@ -30,7 +30,9 @@ WaySeat::~WaySeat()
 
 void way_seat_init(WayServer* server)
 {
-    init_seat(server, wm_get_seat(server->wm));
+    for (auto* seat : wm_get_seats(server->wm)) {
+        init_seat(server, seat);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -43,7 +45,7 @@ WAY_INTERFACE(wl_seat) = {
 };
 
 static
-auto find_client_seat(WayClient* client, Seat* seat) -> WayClientSeat*
+auto find_client_seat(WayClient* client, WmSeat* seat) -> WayClientSeat*
 {
     for (auto* cs : client->seats) {
         if (cs->seat->seat == seat) {
@@ -71,7 +73,7 @@ WAY_BIND_GLOBAL(wl_seat, bind)
     way_send<wl_seat_send_capabilities>(resource, WL_SEAT_CAPABILITY_KEYBOARD | WL_SEAT_CAPABILITY_POINTER);
 
     if (bind.version >= WL_SEAT_NAME_SINCE_VERSION) {
-        way_send<wl_seat_send_name>(resource, seat_get_name(seat->seat));
+        way_send<wl_seat_send_name>(resource, wm_seat_get_name(seat->seat));
     }
 
     // TODO: Synchronize with current seat keyboard/pointer/data state
@@ -84,40 +86,33 @@ WayClientSeat::~WayClientSeat()
 
 // ---------------------------------------------------------------------------------------
 
-static
-void handle_keyboard_event(WayClient* client, SeatEvent* event, auto&& fn)
+void way_seat_handle_event(WayClient* client, WmEvent* event)
 {
-    if (auto* client_seat = find_client_seat(client, seat_keyboard_get_seat(event->keyboard.keyboard))) {
-        fn(client_seat, event);
+#define HANDLE_EVENT(Event, Function) \
+    if (auto* client_seat = find_client_seat(client, (Event).seat)) { \
+        Function(client_seat, &(Event)); \
     }
-}
 
-static
-void handle_pointer_event(WayClient* client, SeatEvent* event, auto&& fn)
-{
-    if (auto* client_seat = find_client_seat(client, seat_pointer_get_seat(event->pointer.pointer))) {
-        fn(client_seat, event);
-    }
-}
-
-
-void way_seat_handle_event(WayClient* client, SeatEvent* event)
-{
     switch (event->type) {
-        break;case SeatEventType::keyboard_enter:    handle_pointer_event(client, event, way_seat_on_keyboard_enter);
-        break;case SeatEventType::keyboard_leave:    handle_pointer_event(client, event, way_seat_on_keyboard_leave);
-        break;case SeatEventType::keyboard_key:      handle_pointer_event(client, event, way_seat_on_key);
-        break;case SeatEventType::keyboard_modifier: handle_pointer_event(client, event, way_seat_on_modifier);
+        break;case WmEventType::keyboard_enter:    HANDLE_EVENT(event->keyboard, way_seat_on_keyboard_enter);
+        break;case WmEventType::keyboard_leave:    HANDLE_EVENT(event->keyboard, way_seat_on_keyboard_leave);
+        break;case WmEventType::keyboard_key:      HANDLE_EVENT(event->keyboard, way_seat_on_key);
+        break;case WmEventType::keyboard_modifier: HANDLE_EVENT(event->keyboard, way_seat_on_modifier);
 
-        break;case SeatEventType::pointer_enter:  handle_pointer_event(client, event, way_seat_on_pointer_enter);
-        break;case SeatEventType::pointer_leave:  handle_pointer_event(client, event, way_seat_on_pointer_leave);
-        break;case SeatEventType::pointer_motion: handle_pointer_event(client, event, way_seat_on_motion);
-        break;case SeatEventType::pointer_button: handle_pointer_event(client, event, way_seat_on_button);
-        break;case SeatEventType::pointer_scroll: handle_pointer_event(client, event, way_seat_on_scroll);
+        break;case WmEventType::pointer_enter:  HANDLE_EVENT(event->pointer, way_seat_on_pointer_enter);
+        break;case WmEventType::pointer_leave:  HANDLE_EVENT(event->pointer, way_seat_on_pointer_leave);
+        break;case WmEventType::pointer_motion: HANDLE_EVENT(event->pointer, way_seat_on_motion);
+        break;case WmEventType::pointer_button: HANDLE_EVENT(event->pointer, way_seat_on_button);
+        break;case WmEventType::pointer_scroll: HANDLE_EVENT(event->pointer, way_seat_on_scroll);
 
-        break;case SeatEventType::selection:
-            if (auto* client_seat = find_client_seat(client, event->data.seat)) {
+        break;case WmEventType::selection:
+            if (auto* client_seat = find_client_seat(client, event->selection.seat)) {
                 way_data_offer_selection(client_seat);
             }
+
+        break;default:
+            debug_unreachable();
     }
+
+#undef HANDLE_EVENT
 }

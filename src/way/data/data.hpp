@@ -2,12 +2,12 @@
 
 #include "../util.hpp"
 
-#include <seat/seat.hpp>
+#include <wm/wm.hpp>
 
 struct WayClient;
 struct WayClientSeat;
 
-struct WayDataSource : SeatDataSource
+struct WayDataSource : WmDataSource
 {
     WayClient* client;
 
@@ -25,7 +25,7 @@ struct WayDataOffer
 
     WayResource resource;
 
-    Ref<SeatDataSource> source;
+    Ref<WmDataSource> source;
 };
 
 void way_data_offer_selection(WayClientSeat*);

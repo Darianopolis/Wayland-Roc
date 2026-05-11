@@ -22,7 +22,7 @@ An experiment in writing a simple opinionated independent Wayland compositor, wi
 Roc is organized roughly into several layers:
 
  - Core Utilities and I/O ─ `core`, `gpu`, `io`
- - Window Manager ─ `scene`, `seat`, `wm`
+ - Window Manager ─ `scene`, `wm`
  - Clients ─ `ui`, `way`, `shell`
 
 ### `core` ─ Common Utilities
@@ -65,15 +65,6 @@ A spatial hierarchy providing hit-testing, damage tracking, and rendering logic.
 - Damage listeners
 - Rendering
 
-### `seat` ─ Seat
-
-Input and data routing logic.
-
-- Focus based input routing
-- Data management
-   - Selection buffers
-   - Drag and drop
-
 ### `wm` ─ Window Manager
 
 Internal client/server protocol for window management.
@@ -82,6 +73,10 @@ Internal client/server protocol for window management.
 - Mouse
    - Acceleration
    - Constraints
+- Focus based input routing
+- Data management
+   - Selection buffers
+   - Drag and drop
 - Window decorations
    - CSD clipping
    - Focus borders

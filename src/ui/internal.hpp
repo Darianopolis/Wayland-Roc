@@ -35,29 +35,12 @@ struct Ui
 
     std::move_only_function<UiFrameFn> frame_handler;
 
-    std::flat_set<Seat*> seats;
-
-    SeatKeyboard* keyboard;
-    SeatPointer*  pointer;
-
     struct {
         std::string text;
     } clipboard;
 
     ~Ui();
 };
-
-void ui_frame(                Ui*);
-void ui_handle_key(           Ui*, SeatInputCode, bool pressed);
-void ui_handle_mods(          Ui*);
-void ui_handle_motion(        Ui*);
-void ui_handle_button(        Ui*, SeatInputCode, bool pressed);
-void ui_handle_wheel(         Ui*, vec2f32 delta);
-void ui_handle_keyboard_enter(Ui*, SeatKeyboard*, SeatFocus*);
-void ui_handle_keyboard_leave(Ui*);
-void ui_handle_pointer_enter( Ui*, SeatPointer*, SeatFocus*);
-void ui_handle_pointer_leave( Ui*);
-void ui_handle_output_layout( Ui*);
 
 struct UiContextGuard
 {

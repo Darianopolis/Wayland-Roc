@@ -37,13 +37,22 @@ void way_on_client_create(wl_listener* listener, void* data)
                     way_surface_on_redraw(surface);
                 }
 
-            break;case WmEventType::seat_event:
-                way_seat_handle_event(client, event->seat.event);
+            break;case WmEventType::keyboard_enter:
+                  case WmEventType::keyboard_leave:
+                  case WmEventType::keyboard_key:
+                  case WmEventType::keyboard_modifier:
+                  case WmEventType::pointer_enter:
+                  case WmEventType::pointer_leave:
+                  case WmEventType::pointer_motion:
+                  case WmEventType::pointer_button:
+                  case WmEventType::pointer_scroll:
+                  case WmEventType::selection:
+                way_seat_handle_event(client, event);
 
             break;case WmEventType::pointer_constraint_enabled:
-                way_pointer_constraint_on_active(client, event->pointer_constraint.constraint, true);
+                way_pointer_constraint_on_active(client, event->pointer.constraint.constraint, true);
             break;case WmEventType::pointer_constraint_disabled:
-                way_pointer_constraint_on_active(client, event->pointer_constraint.constraint, false);
+                way_pointer_constraint_on_active(client, event->pointer.constraint.constraint, false);
 
             break;default:
                 ;
