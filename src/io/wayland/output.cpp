@@ -1,5 +1,7 @@
 #include "wayland.hpp"
 
+#include <core/log.hpp>
+
 static
 void format_table(void* udata, zwp_linux_dmabuf_feedback_v1* zwp_linux_dmabuf_feedback_v1, fd_t fd, u32 size)
 {
@@ -192,7 +194,8 @@ void io_output_create(IoContext* io)
 {
     if (!io->wayland) return;
 
-    exec_enqueue(io->exec, [io] {
+    io->wayland->create_output = io->exec->idle.listen([io] {
+        io->wayland->create_output.unlink();
         create_output(io);
     });
 }

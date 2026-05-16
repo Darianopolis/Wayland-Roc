@@ -1,7 +1,8 @@
 #include "exec.hpp"
 
-#include <core/chrono.hpp>
-#include <core/util.hpp>
+#include "chrono.hpp"
+#include "util.hpp"
+#include "log.hpp"
 
 // -----------------------------------------------------------------------------
 
@@ -23,51 +24,6 @@ auto from_epoll_events(u32 events) -> Flags<FdEventBit>
     return out;
 }
 
-void exec_add_timer_wakeup(ExecContext* exec, std::chrono::steady_clock::time_point exp)
-{
-    if (exec->current_wakeup && exp > *exec->current_wakeup) {
-        return;
-    }
-
-    exec->current_wakeup = exp;
-
-    unix_check<timerfd_settime>(exec->timer_fd.get(), TFD_TIMER_ABSTIME, ptr_to(itimerspec {
-        .it_value = steady_clock_to_timespec<CLOCK_MONOTONIC>(exp),
-    }), nullptr);
-}
-
-static
-void handle_timer(ExecContext* exec, fd_t fd)
-{
-    u64 expirations;
-    if (unix_check<read>(fd, &expirations, sizeof(expirations)).value != sizeof(expirations)) return;
-
-    auto now = std::chrono::steady_clock::now();
-    exec->current_wakeup = std::nullopt;
-
-    std::optional<std::chrono::steady_clock::time_point> min_exp;
-
-    std::vector<std::move_only_function<void()>> dequeued;
-    std::erase_if(exec->timed_events, [&](auto& event) {
-        if (now >= event.expiration) {
-            dequeued.emplace_back(std::move(event.callback));
-            return true;
-        } else {
-            min_exp = min_exp ? std::min(*min_exp, event.expiration) : event.expiration;
-        }
-        return false;
-    });
-
-    exec->stats.events_handled += dequeued.size();
-    for (auto& callback : dequeued) {
-        callback();
-    }
-
-    if (min_exp) {
-        exec_add_timer_wakeup(exec, *min_exp);
-    }
-}
-
 auto exec_create() -> Ref<ExecContext>
 {
     auto exec = ref_create<ExecContext>();
@@ -75,24 +31,6 @@ auto exec_create() -> Ref<ExecContext>
     exec->os_thread = std::this_thread::get_id();
 
     exec->epoll_fd = Fd(unix_check<epoll_create1>(EPOLL_CLOEXEC).value);
-
-    exec->task_fd = Fd(unix_check<eventfd>(0, EFD_CLOEXEC | EFD_NONBLOCK).value);
-    fd_listen(exec.get(), exec->task_fd.get(), FdEventBit::readable, [exec = exec.get()](fd_t fd, Flags<FdEventBit> events) {
-        eventfd_t tasks = {};
-        unix_check<eventfd_read>(fd, &tasks);
-        exec->tasks_available += tasks;
-
-        // Don't double dip task event stats
-        exec->stats.events_handled--;
-    });
-
-    exec->timer_fd = Fd(unix_check<timerfd_create>(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC).value);
-    fd_listen(exec.get(), exec->timer_fd.get(), FdEventBit::readable, [exec = exec.get()](fd_t fd, Flags<FdEventBit> events) {
-        handle_timer(exec, fd);
-
-        // Don't double dip timer event stats
-        exec->stats.events_handled--;
-    });
 
     return exec;
 }
@@ -109,44 +47,28 @@ auto exec_get_thread_context() -> ExecContext*
     return exec_thread_context;
 }
 
-#define EXEC_CHECK_LISTENERS 1
+static
+void check_all_stopped(ExecContext* exec)
+{
+    debug_assert(exec->idle.listeners.empty());
+
+    for (auto[i, listener] : exec->listeners | std::views::enumerate) {
+        debug_assert(!listener, "Listener for ({}) still registered", i);
+    }
+}
 
 ExecContext::~ExecContext()
 {
     debug_assert(stopped);
 
-    fd_unlisten(this, task_fd.get());
-    fd_unlisten(this, timer_fd.get());
-
-#if EXEC_CHECK_LISTENERS
-    for (auto[i, listener] : listeners | std::views::enumerate) {
-        debug_assert(!listener, "Listener for ({}) still registered", i);
-    }
-#endif
+    check_all_stopped(this);
 }
 
 void exec_stop(ExecContext* exec)
 {
     exec->stopped = true;
 
-#if EXEC_CHECK_LISTENERS
-    auto user_listeners = exec->listeners
-        | std::views::enumerate
-        | std::views::filter([&](auto e) {
-            auto[fd, l] = e;
-            return l && fd != exec->timer_fd.get() && fd != exec->task_fd.get();
-        });
-
-    if (u32 listeners = range_count(user_listeners)) {
-        // Just log an error for now, in the future we will be more strict and
-        // assert if any user registered listeners are still attached at this point.
-        log_error("Stopping event loop with {} registered listeners remaining!", listeners);
-    }
-
-    for (auto[i, listener] : user_listeners) {
-        log_error("  ({})", i);
-    }
-#endif
+    check_all_stopped(exec);
 }
 
 void exec_run(ExecContext* exec)
@@ -164,14 +86,14 @@ void exec_run(ExecContext* exec)
         // Check for new fd events
 
         i32 timeout = 0;
-        if (!exec->tasks_available) {
+        if (exec->idle.listeners.empty()) {
             exec->stats.poll_waits++;
             timeout = -1;
         }
         auto[count, error] = unix_check<epoll_wait, EAGAIN, EINTR>(exec->epoll_fd.get(), events.data(), events.size(), timeout);
         if (error) {
             if (error == EAGAIN || error == EINTR) {
-                if (!exec->tasks_available) continue;
+                if (exec->idle.listeners.empty()) continue;
             } else {
                 // At this point, we can't assume that we'll receive any future FD events.
                 // Since this includes all user input, the only safe thing to do is
@@ -201,28 +123,7 @@ void exec_run(ExecContext* exec)
             }
         }
 
-        // Flush tasks
-
-        if (exec->tasks_available) {
-            u64 available = std::exchange(exec->tasks_available, 0);
-
-            exec->stats.events_handled += available;
-            for (u64 i = 0; i < available; ++i) {
-                ExecTask task;
-                {
-                    std::scoped_lock _{exec->queue_mutex};
-                    task = std::move(exec->queue.front());
-                    exec->queue.pop_front();
-                }
-
-                task.callback();
-
-                if (task.sync) {
-                    task.sync->test_and_set();
-                    task.sync->notify_one();
-                }
-            }
-        }
+        exec->idle();
     }
 }
 

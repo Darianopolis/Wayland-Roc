@@ -171,16 +171,17 @@ struct Link
         return *this;
     }
 
-    void remove()
-    {
-        unlink();
-    }
-
     void insert_after(Link<T>* other)
     {
         next->prev = other;
         other->next = next;
+        other->prev = this;
         next = other;
+    }
+
+    auto empty() -> bool
+    {
+        return next == this;
     }
 };
 
@@ -270,6 +271,12 @@ public:
     T* operator[](usz index) const
     {
         return values[index];
+    }
+
+    void destroy_all()
+    {
+        for (auto* v : values) object_destroy(v);
+        values.clear();
     }
 
     void clear()

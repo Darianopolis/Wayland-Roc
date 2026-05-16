@@ -41,6 +41,7 @@ auto gpu_syncpoint_to_submit_info(const GpuSyncpoint& syncpoint) -> VkSemaphoreS
 auto gpu_syncobj_create(Gpu* gpu) -> Ref<GpuSyncobj>
 {
     auto syncobj = ref_create<GpuSyncobj>();
+    gpu->stats.active_syncobjs++;
     syncobj->gpu = gpu;
 
     unix_check<drmSyncobjCreate>(gpu->drm.fd, 0, &syncobj->syncobj);
@@ -51,6 +52,7 @@ auto gpu_syncobj_create(Gpu* gpu) -> Ref<GpuSyncobj>
 auto gpu_syncobj_import(Gpu* gpu, fd_t syncobj_fd) -> Ref<GpuSyncobj>
 {
     auto syncobj = ref_create<GpuSyncobj>();
+    gpu->stats.active_syncobjs++;
     syncobj->gpu = gpu;
 
     unix_check<drmSyncobjFDToHandle>(gpu->drm.fd, syncobj_fd, &syncobj->syncobj);
@@ -97,6 +99,8 @@ auto gpu_syncobj_export_syncfile(GpuSyncobj* syncobj, u64 source_point) -> Fd
 
 GpuSyncobj::~GpuSyncobj()
 {
+    gpu->stats.active_syncobjs--;
+
     gpu->vk.DestroySemaphore(gpu->device, semaphore, nullptr);
 
     if (wait.fd) {

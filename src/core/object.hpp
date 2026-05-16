@@ -1,7 +1,6 @@
 #pragma once
 
 #include "types.hpp"
-#include "log.hpp"
 #include "util.hpp"
 #include "debug.hpp"
 
@@ -77,6 +76,7 @@ inline
 void object_destroy(void* v)
 {
     auto header = allocation_from(v);
+    debug_assert(header->ref_count == 1);
     header->free(header);
 }
 

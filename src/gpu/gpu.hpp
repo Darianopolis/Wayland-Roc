@@ -214,6 +214,8 @@ struct Gpu
         usz active_buffer_memory;
 
         u32 active_samplers;
+
+        u32 active_syncobjs;
     } stats;
 
     std::vector<VkSemaphore> free_binary_semaphores;

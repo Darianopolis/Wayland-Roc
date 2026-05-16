@@ -52,6 +52,9 @@ struct IoContext
     Ref<IoDrm>      drm;      // output
     Ref<IoWayland>  wayland;  // output | input_device
 
+    Listener<void()> request_shutdown;
+    Listener<void()> shutdown;
+
     ~IoContext();
 };
 
@@ -71,6 +74,7 @@ struct IoOutputBase : IoOutput
     bool commit_available = true;
 
     virtual void request_frame() final override;
+    Listener<void()> try_redraw;
 
     virtual ~IoOutputBase();
 };

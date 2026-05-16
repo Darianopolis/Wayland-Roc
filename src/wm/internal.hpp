@@ -49,6 +49,7 @@ struct WmServer
 
     Ref<Scene> scene;
     EnumMap<WmLayer, Ref<SceneTree>> layers;
+    Listener<void()> handle_input_region_damage;
 
     SeatModifier main_mod;
 

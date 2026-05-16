@@ -79,6 +79,8 @@ struct IoWayland
     IO_WL_INTERFACE(wp_linux_drm_syncobj_manager_v1);
     IO_WL_INTERFACE(wp_cursor_shape_manager_v1);
 
+    Listener<void()> create_output;
+
     struct {
         std::vector<std::pair<GpuFormat, GpuDrmModifier>> table;
         GpuFormatSet set;

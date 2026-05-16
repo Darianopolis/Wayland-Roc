@@ -1,7 +1,6 @@
 #pragma once
 
 #include "pch.hpp"
-#include "log.hpp"
 #include "types.hpp"
 
 // -----------------------------------------------------------------------------
